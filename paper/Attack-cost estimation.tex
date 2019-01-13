@@ -1,0 +1,315 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[numbers]{natbib}
+\setcitestyle{numbers}
+\usepackage{mathtools}
+\usepackage[toc,page]{appendix}
+\usepackage{makecell}
+\usepackage{graphicx}
+\usepackage{caption}
+\captionsetup[figure]{font=small}
+\usepackage{wrapfig}
+\begin{document}
+
+\title{Parametrized cost of attack as a measure of Decred network security}
+\author{Brian Stafford}
+\maketitle
+
+\section{Introduction}
+
+Due its hybrid concensus protocol, the Decred network presents unique challenges to measuring the network's resiliency to attack. In addition to new proof-of-stake related vulnerabilities, the well known $ > 50\% $ hashpower threshold is not constant for Decred. The hashpower threshold also depends on the fraction of stake pool tickets the attacker controls \cite{POA}. For an attacker who controls very few tickets, the hashpower threshold is very nearly 100\%, but becomes lower with increasing stake. 
+
+Proposed here is a measure of network security tentatively named the \emph{parametrized cost of attack} (PCOA), defined roughly as the fiat expenditure required to perform an attack.  
+
+The PCOA can be broken into two components; the work component, $W$ and the stake component $S$. The cost of attack, $A$, is the sum of the components.
+%
+\begin{equation}
+A = W + S
+\end{equation}
+%
+These two components are not independent. They are related through $ \sigma(y) $, which is the fraction of total network hashrate an attacker would need to control in order to perform an attack, given they control fraction $ y $ of the stakepool tickets. If N ticket holders are chosen per block, the probability $ P(y) $ that the attacker holds a majority of selected tickets is given by 
+%
+\begin{equation}
+P(y) = \sum_{k=0}^{k < N/2}  {{N}\choose{k}}   y^{N-k} \Big( (1-y) \cdot p \Big)^k
+\end{equation}
+%
+where $ {{N}\choose{k}}  $ is a binomial coefficient. $ N $ is set to 5 for Decred, but is left as a paremeter here. The participation ratio, $ p $, is the fraction of stakeholders online and ready to vote, and has historically been very nearly 1. 
+
+The attacker would hold the majority of tickets on every $ 1 / P(y) $ blocks. Conversely, the honest nodes would be able to achieve consensus on every $ 1 / (1 - P(y)) $. The attacker would need 
+%
+\begin{equation}
+x(y) = \frac{ 1 / P(y) }{ 1 / ( 1 - P(y) ) } = \frac{ 1 }{ P(y) } - 1
+\end{equation}
+%
+times the honest hashpower in order to outpace the honest chain. This relation gives the first insight into the work term. If the network hashrate,  $ H_{net} $, is known, one could, in principle, calculate how much hashing power an attacker would need to control, and see how much it would cost to purchase. But $ x(y) \cdot H_{net} $ fails to minimize the costs because of an implicit assumption that the attacker's hashpower is not already a part of the honest network hashpower. 
+%
+\begin{wrapfigure}{l}{0.50\textwidth}
+  \vspace{-10pt}
+  \begin{center}
+    	\includegraphics[width=0.34\textwidth]{sigma}
+	\vspace{-10pt}
+	\begin{minipage}[t]{0.35\textwidth}
+	\caption{The threshold of hashpower needed to initiate an attack. }	
+	\end{minipage}
+	\vspace{0pt}
+  \end{center}
+\end{wrapfigure}
+%
+Instead, assume that the attacker's hashpower is already mining honestly on the mainchain before being apruptly redirected to the attacker's chain. Then
+%
+\begin{equation}
+\sigma(y) = \frac{ x(y) }{ x(y) + 1 }
+\end{equation}
+%
+is the fraction of total network hashrate an attacker would need to redirect. 
+
+Note that $ W \propto \sigma(y) $ and $ T \propto y $. The cost of attack is calculated by taking the minimum of $ A(y) $ on $[0,1]$. 
+
+\section{Work term}
+
+The work term, $W$, is the cost associated with POW mining. The correct form of the work term is complicated by the availability of rental equipment, and as such depends on market rental price and rental availability. The general form is
+%
+\begin{equation}
+W =  \underbracket{R}_{\text{rental}} + \underbracket{D + P}_{\text{retail}}
+\end{equation}
+%
+where $R$ is the total costs associated with rental equipment, $D$ is the total cost of purchasing retail devices and associated equipment, and $P$ is the total cost of power over the duration of attack. $ P $ is typically small. Rental costs can be calculated given a rental price, $r_e$, (units price/hash) and a "rentability", $a$,  which represents the total rental hashing power available in units of hashrate. For an attack duration $t_a$, the rental costs are 
+%
+\begin{equation}
+R = a r_e t_a.
+\end{equation}
+
+If there is not enough rentability to meet the attacker's hashpower threshold, retail equipment supplies the remainder. To calculate retail costs, key equipment parameters can be estimated from the device performance and retail market price of state-of-the-art hardware. Devices will have a hashrate $h_d$, a power draw $\omega_d$, and a retail cost $p_d$, which should include some amount of overhead associated with support equipment, i.e. power supplies, cabling, etc. Device parameters are ultimately expressed in terms of the power efficiency $\eta = h_d / \omega_d$, and relative cost $\rho = p_d / h_d$. The full retail costs are given by summing the equipment term
+%
+\begin{equation}
+D = ( H_a - a )  \cdot \rho
+\end{equation}
+%
+with the power term
+%
+\begin{equation}
+P = \frac{ ( H_a - a ) }{ \eta } \cdot c \cdot t_a
+\end{equation}
+%
+where $H_a$ is the required attacker hashrate and $c$ is the electricity rate (cost/energy). 
+
+The work fraction, or the fraction of network hashrate the attacker would need to redirect, is related to the total network hashrate, $H_{net}$, through equation 3 as 
+%
+\begin{equation}
+H_a = \sigma(y)H_{net}.
+\end{equation}
+ 
+
+For further parametrization, it's useful to note the relationship between network hashrate, fiat exchange rate $ X $, miner profitability $ \alpha_w $, and various network and device parameters (Appendix A).
+%
+\begin{equation}
+H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.24 c / \eta  }
+\end{equation}
+%
+where $\beta$ is the total POW rewards (DCR) payed out daily. The benefit of parametrizing in terms of miner profitability is that the value is self-regulating and tends towards zero. $\beta$ is dependent on various network parameters as
+%
+\begin{equation}
+\beta = \frac{ 86400 R_{pow} }{ t_b } 
+\end{equation}
+%
+with $R_{pow}$ the POW block reward, and $t_b$ is the network's target block time. The full block reward, $R_{tot}$, for Decred is dependent on block height, $h$.
+%
+\begin{equation}
+R_{tot}(h) = 31.19582664(100/101)^{floor(h/6144)}
+\end{equation}
+%
+At the time of writing, the POW miner is rewarded with 60\% of the total block reward, though it will be left as a parameter, $ s_w $, here; $R_{pow} = s_w R_{tot}$. 
+
+The fully parametrized work term is then 
+%
+\begin{equation}
+W = ar_et_a +\Big( H_a - a \Big) \Big(\rho + \frac{ c t_a }{ \eta } \Big)
+\end{equation}
+%
+with
+%
+%
+\begin{equation}
+a \le H_a = \frac{ 86400 s_w \sigma(y) R_{tot}(h) X }{ t_b (\alpha_w \rho + 0.24 c / \eta) }
+\end{equation}
+%
+Equation 13 assumes units of seconds for block time and fiat/kWh for electricity rate.
+
+
+\section{Stake term}
+%
+\begin{figure}[!b]
+\hrule
+	\vspace{5pt}
+	\begin{center}
+	\includegraphics[width=0.62\textwidth]{stakereturn}
+\begin{minipage}[t]{0.85\textwidth}
+	\caption{As Decred staking gains acceptance as an investment product, the returns will tend towards those of other common investment products. }
+	\end{minipage}
+  	\end{center}
+\end{figure}
+%
+The ticket fraction, $y$, is the ratio of attacker controlled tickets to all tickets in the stake pool. For an average stake difficulty (ticket price), $ p_t $, and a ticket pool size of $ Z $ tickets, the stake term is expressed as 
+%
+\begin{equation}
+S = yZXp_t
+\end{equation}
+%
+%
+\begin{figure}[h]
+	\begin{center}
+	\includegraphics[width=0.55\textwidth]{returnsupply}
+\begin{minipage}[t]{0.85\textwidth}
+	\caption{There is a lower limit to the steady state APY where the total stake is equal to the total supply. The position of the limit can be modified by increasing or decreasing the fraction of the block reward given to ticket holders. }
+	\end{minipage}
+  	\end{center}
+	\hrule
+\end{figure}
+%
+Historically, the stake difficulty has shown relative stability, even through chaotic market changes, so variations in the ticket term have mostly followed the fiat exchange rate. 
+
+In a similar fashion as the work term, the stake term can be further parametrized by noting the relationship between ticket price, block reward, and stake annual percentage yield (APY), $ \alpha_s $,
+%
+\begin{equation}
+\alpha_s = \bigg( \frac{ p_t + (R_{pos} / N) }{ p_t } \bigg)^{365/28} - 1
+\end{equation}
+%
+with $ R_{pos} = s_s R_{tot} $ ($ s_s $ is currently set at 0.3). Here again, the return rate is chosen for parametrization due to its tendency towards some natural value. In this case, though, the asymptotoic value is not zero. Instead, as Decred staking gains acceptance as an institutional investment product, the return rate should approach the rates of other common investments. The typical APY of institutional investment products ranges from around 2\% for bonds to about 7\% for stocks. Because of the limited supply of Decred, there is a lower limit on the steady-state APY possible given by 
+%
+\begin{equation}
+C(t) = p_t Z \rightarrow \alpha_{min} = \Big[ \frac{ Z R_{pos} }{ C(t) N } + 1 \Big]^{365/28} - 1
+\end{equation}
+%
+where $ C(t) $ is the total Decred in circulation. This provides a natural lower limit to the range of $ \alpha_s $. 
+
+
+The fully parametrized stake term can then be written.
+
+\begin{equation}
+S = \frac{ yZXs_sR_{tot} }{ N [ ( \alpha_s + 1)^{28/365} - 1 ] }
+\end{equation} 
+
+\section{Application}
+
+To make use of the PCOA, typically a starting position in parameter space is chosen, and parameters are varied one or two at a time around that position, treating all other as either constant, or changing in some known way with the chosen variables. 
+
+What the ideal block reward split for the current network conditions. 
+
+
+
+\bibliography{attack}{}
+\bibliographystyle{unsrt}
+
+\begin{appendices}
+\section{Network hashrate and POW profitability}
+
+Miner net daily earnings can be written as 
+%
+\begin{equation}
+E_{net} = \alpha_w p_d = \underbracket{ E_g }_{\text{gross profit}} -  \underbracket{ \frac{ 24 \omega_d c }{ 1000 } }_{ \text{ power costs } } 
+\end{equation}
+%
+which defines a profitability, $ \alpha_w $. The profitability can be thought of as the fraction of device cost retrieved in a day of mining. Profitability self-regulates in that if profitability gets too high, entrepeneurial miners will buy more hashpower and profitability will drop. If profitability drops below zero, it becomes cheaper to buy DCR outright, so miners will turn off their equipment and it will tend back towards zero. 
+
+\begin{figure}
+	\centering
+	\includegraphics[scale=1.60]{profitability}
+	\caption{Mining profitability shows immediate response to price spikes, followed by decay towards zero when the price is stable. }
+	\vspace{5pt}
+	\hrule
+	\vspace{6pt}
+\end{figure}
+
+The fiat value of block rewards payed out to miners in a given day can be written in terms of total POW portion of the block reward, $ \beta $ and the fiat exchange rate.
+%
+\begin{equation}
+Q = \beta X
+\end{equation}
+%
+
+Using the model device statistics, the total number of devices on the network, $ N_d $, can be expressed in two different ways. 
+%
+\begin{equation}
+N_d = \frac{ Q }{ E_{g} } = \frac{ H_{ net } }{ h_d }
+\end{equation}
+%
+
+Combining this relation with equation 15, and substituting alternative device parameters $ \rho $ and $ \eta $, yields an expression for network hashrate. 
+%
+\begin{equation}
+H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.24 c / \eta  }
+\end{equation}
+%
+in terms of the somewhat predictable profitability term. 
+
+\begin{table}[]
+\renewcommand{\arraystretch}{1.25}% Spread rows out...
+\begin{tabular}{l|c|c|c|c|}
+\cline{2-5}
+                                           & \multicolumn{2}{c|}{GPU}                      & \multicolumn{2}{c|}{ASIC}                      \\ \cline{2-5} 
+                                           & low                   & high                  & low                   & high                   \\ \hline
+\multicolumn{1}{|r|}{$ \eta $ (hashrate		/watt)} & $ 4.1 \times 10^{6} $ & $ 1.8\times 10^{7} $  & $ 3.9\times 10^{8} $  & $ 2.3\times 10^{9} $   \\ \hline
+\multicolumn{1}{|r|}{$ \rho $ (\$/hashrate)}   & $ 3.5\times 10^{-7} $ & $ 1.3\times 10^{-7} $ & $ 2.5\times 10^{-9} $ & $ 8.1\times 10^{-10} $ \\ \hline
+\end{tabular}
+	\caption{Power efficiency, $ \eta $, and relative cost, $ \rho $, of the model devices used for the ranges in figure 3.}
+	\vspace{5pt}
+	\hrule
+	\vspace{6pt}
+\end{table}
+
+\newpage
+
+\begin{center}
+  \begin{tabular}{ | c | c | l | }
+    \hline
+	\textbf{ symbol } & \textbf{ unit } & \textbf{ description } \\ \hline
+	$ A $ & fiat & \makecell[l]{ Cost of attack. Minimum cost to launch a \\successful attack on the Decred  network. } \\ \hline
+	$ a $ & hashes/time & \makecell[l]{Rentability. Amount of hashing power available on\\ the rental market} \\ \hline
+	$ \alpha_w $ & $ - $ & \makecell[l]{POW profitability. Daily earnings as a fraction of\\ device cost.} \\ \hline
+	$ \alpha_s $ & $ - $ & \makecell[l]{Stake return. Annual percentage yield.} \\ \hline
+	$ \beta $ & DCR & \makecell[l]{POW payout. Total decred paid to POW miners\\ per day.} \\ \hline
+	$ c $ & fiat/energy & Electricity rate. Common units of \$/kWh. \\ \hline
+	$ D $ & fiat & Retail equipment cost. \\ \hline
+	$ E_g $ & fiat & Model device gross daily earnings, before power costs. \\ \hline
+	$ E_{net} $ & fiat & Model device net daily earnings. \\ \hline
+	$ \eta $ & hashrate/power & POW power efficiency. $ \eta = h_d/\omega_d $ \\ \hline	
+	$ H_a $ & hash/time & Hashpower required to be under attacker control. \\ \hline
+	$ H_{net} $ & hash/time & Total network hashpower. \\ \hline
+	$ h_d $ & hash/time & Model device hashrate. \\ \hline
+	$ N $ & $ - $ & POS validators per block. \\ \hline
+	$ P $ & fiat & Power costs of attack. \\ \hline
+	$ p $ & $ - $ & \makecell[l]{Participation level. Fraction of tickets which\\ belong to an online stakeholder.} \\ \hline
+	$ p_d $ & fiat & Model device price. \\ \hline
+  \end{tabular}
+\end{center}	
+
+\begin{center}
+  \begin{tabular}{ | c | c | l | }
+    \hline
+	\textbf{ symbol } & \textbf{ unit } & \textbf{ description } \\ \hline
+	$ p_t $ & fiat & Ticket price. \\ \hline
+	$ \rho $ & fiat/hashrate & Relative device cost. $\rho = p_d / h_d$ \\ \hline
+	$ Q $ & fiat & Total POW payout per day, in fiat. \\ \hline
+	$ R $ & fiat & Rental costs of attack. \\ \hline
+	$ R_{pow} $ & DCR & POW block reward. \\ \hline
+	$ R_{tot} $ & DCR & Total block reward. \\ \hline
+	$ r_e $ & fiat/hash & Rental rate. \\ \hline
+	$ S $ & fiat & Stake term. Total cost of attack spent on tickets. \\ \hline
+	$ s_s $ & $ - $ & \makecell[l]{POS rewaard share Fraction of $R_{tot}$. given as a \\stake reward. }\\ \hline
+	$ s_w $ & $ - $ & \makecell[l]{ POW reward share. Fraction of $R_{tot} $ given as a \\POW reward. }\\ \hline
+	$ \sigma $ & $ - $ & \makecell[l]{ Hashportion. The minimum attacker hashpower, as a \\fraction of total network hashpower.} \\ \hline
+	$ t_a $ & time & Attack duration. Time required to carry out attack. \\ \hline
+	$ t_b $ & time & Block time. The network block time target. \\ \hline
+	$ W $ & fiat & Work term. Total equipment-related costs of attack. \\ \hline
+	$ \omega_d $ & energy/time & Model device power draw. \\ \hline
+	$ X $ & fiat/DCR & Exchange rate. \\ \hline
+	$ x $ & $ - $ & Hashrate multiplier. From \cite{POA}. \\ \hline
+	$ y $ & $ - $ & Attacker controlled fraction of the total stake pool. \\ \hline
+	$ Z $ & tickets & Ticket pool size. A network parameter. \\ \hline
+  \end{tabular}
+\end{center}
+
+
+
+
+\end{appendices}
+\end{document}
