@@ -71,21 +71,20 @@ devices = {
 }
 
 DeviceParams = {
-	"Blake256r14" : MODEL_DEVICE,
+	"Blake256r14": MODEL_DEVICE,
 	"Equihash <200,9>": {
-		"model":"Asicminer Zeon",
-		"example": "ZEC",
-		"hashrate": 180000,
-		"power": 2200,
-		"price": 19900
+		"model":"Bitmain Z9",
+		"hashrate": 41e3,
+		"power": 1150,
+		"price": 3300
 	},
-	"Equihash <144, 5>": {
-		"model": "GeForce 1080 Ti",
-		"example": "BTG",
-		"hashrate": 56,
-		"power": 275,
-		"price": 475
-	},
+	# "Equihash <144, 5>": {
+	# 	"model": "GeForce 1080 Ti",
+	# 	"example": "BTG",
+	# 	"hashrate": 56,
+	# 	"power": 275,
+	# 	"price": 475
+	# },
 	"Ethash": {
 		"model": "Antminer E3",
 		"example": "ETH",
@@ -115,11 +114,8 @@ DeviceParams = {
 		"price": 1475
 	}
 }
-for device in DeviceParams.values():
-	device["daily.power.cost"] = PRIME_POWER_RATE*device["power"]/1000*24
-	device["min.profitability"] = -1*device["daily.power.cost"]/device["price"]
-	device["power.efficiency"] = device["hashrate"]/device["power"]
-	device["relative.price"] = device["price"]/device["hashrate"]
+DeviceParams["Blake256r14"]["example"] = "DCR"
+[makeDevice(d) for d in DeviceParams.values()]
 
 def getDbHeight():
 	return archivist.getQueryResults("SELECT height FROM blocks ORDER BY height DESC LIMIT 1")[0][0]
@@ -516,14 +512,21 @@ def plotAttackCost(rental=True, logScale=False):
 	ax.plot_surface(xcRates, tPrices, logFunc(investments), cmap="viridis")
 	plt.show()
 
-def parametrizeProfitability():
+def parametrizeProfitability(deviceType="gpu"):
 	# endStamp = mktime(2018, 12, 25)
-	endStamp = devices["asic"]["low"]["release"]
-	device = devices["gpu"]["high"]
+	lowGpu = makeDevice(devices["gpu"]["low"])
+	highGpu = makeDevice(devices["gpu"]["high"])
+	lowAsic = makeDevice(devices["asic"]["low"])
+	highAsic = makeDevice(devices["asic"]["high"])
+	
+	if deviceType == "gpu":
+		endStamp = lowAsic["release"]
+		device = highGpu
+	else:
+		endStamp = time.time()
+		device = highAsic
+
 	startStamp = device["release"]
-	# dataClient = DcrDataClient(DCRDATA_URI)
-	# print("\n".join(dataClient.endpointList()))
-	# height = dataClient.block.best.get()["height"]
 	powerCost = device["daily.power.cost"]
 	deviceCost = device["price"]
 	deviceHashrate = device["hashrate"]
@@ -544,36 +547,42 @@ def parametrizeProfitability():
 	priceDeltas = []
 	lastAlpha = None
 	lastPrice = None
+	fitData = []
+	simData = []
 	for (stamp, height, nethash),  (_, price) in zip(hashrates, prices):
 		alpha = profitability(height, price, nethash)
 		stampedAlphas.append((stamp, alpha))
 		if lastAlpha:
 			deltas.append(alpha - lastAlpha)
-			priceDeltas.append((price - lastPrice) / A_DAY)
+			pDelta = price - lastPrice
+			priceDeltas.append(pDelta)
 			alphas.append(lastAlpha)
 			nethashes.append(nethash)
+			simData.append((stamp, nethash, price, pDelta))
+			fitData.append((alpha, price, pDelta))
+
 		lastAlpha = alpha
 		lastPrice = price
 
 	# Used to fit the parameters based on the data
 	def fitDeltaAlpha(x, decay, response):
 		y = []
-		for a, hr, dp in x:
+		for a, p, dp in x:
 			b1 = -1*decay*a # scaling factor helps scipy converge
-			b2 = response*dp/hr*1e12
+			b2 = response*dp
 			# print("a: %f, dp: %f\nb1: %f, b2: %f\n-----------------------------" % (a, dp, b1, b2))
 			y.append(b1 + b2)
 		return y
 
 	halfDay = A_DAY / 2
 	times = [t + halfDay for t, p in prices[:-1]]
-	(decay, response), p_conv = optimize.curve_fit(fitDeltaAlpha, list(zip(alphas, nethashes, priceDeltas)), deltas)
+	(decay, response), p_conv = optimize.curve_fit(fitDeltaAlpha, fitData, deltas)
 	print("decay: %f" % decay)
 	print("response: %f" % response)
 
 
-	def calcDeltaAlpha(a, hr, dp):
-		return -1*decay*a + response*dp/hr*1e12
+	def calcDeltaAlpha(a, p, dp):
+		return -1*decay*a + response*dp
 
 	alphaMin = min(alphas)
 	alphaMax = max(alphas)
@@ -609,8 +618,16 @@ def parametrizeProfitability():
 	startAlpha = lastAlpha = stampedAlphas[0][1]
 	prediction = [startAlpha]
 	lastPrice = prices[0][1]
-	for dp, hr in zip(priceDeltas, nethashes):
-		lastAlpha += calcDeltaAlpha(lastAlpha, hr, dp)
+	hrTracker = nethashes[0]
+	# lastPrice = prices[0][1]
+
+	for t, hr, xcRate, dp in simData:
+		lastAlpha += calcDeltaAlpha(lastAlpha, xcRate, dp)
+		# lastHr += Hnet(t+A_DAY, lastPrice + dp, lastAlpha + da) - Hnet(t, lastPrice, lastAlpha)
+		# lastPrice += dp
+		# lastAlpha += da	
+		# hrTracker = networkHashrate(device, xcRate, lastAlpha, height=timeToHeight(t))
+		# print(hrTracker/hr)
 		prediction.append(lastAlpha)
 
 	fitAx = fig.add_subplot("313")
@@ -749,6 +766,13 @@ def plotTicketReturns():
 	
 	ax.plot(stamps, [makeAPY(r)*100 for r in returns], color="#333333", linewidth=1.5)
 
+	def minApy(t):
+		circulation = getCirculatingSupply(t)
+		posReward = blockReward(timeToHeight(t))*STAKE_SPLIT
+		return (TICKETPOOL_SIZE*posReward/circulation/TICKETS_PER_BLOCK + 1)**(365/28) - 1
+
+	ax.plot(stamps, [minApy(t)*100 for t in stamps], color="#555555", linestyle=":")
+
 	plt.show()
 
 def plotShareRatios(**kwargs):
@@ -814,17 +838,28 @@ def plotRentabilityVsRewardShare(useRatio=True):
 	ax.set_xlim(left=0., right=1.0)
 	plt.show()
 
-def plotContour(processor, var1, var2, divisor=None, fmt="%i", lvlCount=15, **kwargs):
+def plotContour(processor, var1, var2, divisor=None, fmt="%i", lvlCount=15, contourType="contourf", **kwargs):
 	xKey, xVals = var1
 	yKey, yVals = var2
 
 	fig = plt.figure(figsize=(3.5, 3.5))
-	ax = fig.add_subplot("111")#, projection="3d")
+	if contourType == "surface":
+		ax = fig.add_subplot("111", projection="3d")
+	else:
+		ax = fig.add_subplot("111")#, projection="3d")
 
 	X, Y = np.meshgrid(xVals, yVals)
 	divisor = divisor if divisor else 1
 	Z = np.array([processor(**{xKey: x, yKey: y}, **kwargs).attackCost/divisor for x, y in zip(np.ravel(X), np.ravel(Y))]).reshape(X.shape)
-	plt.clabel(ax.contour(X, Y, Z, levels=lvlCount, cmap='viridis_r'), fmt=fmt)
+	if contourType == "contour":
+		plt.clabel(ax.contour(X, Y, Z, levels=lvlCount, cmap='plasma_r'), fmt=fmt)
+	elif contourType == "contourf":
+		plt.contourf(X, Y, Z, levels=lvlCount, cmap='plasma_r')
+		plt.colorbar()
+	elif contourType == "surface":
+		ax.plot_surface(X, Y, Z, cmap='plasma_r')
+	else:
+		raise Exception("plotContour: Unknown contourType: %s" % contourType)
 	ax.set_xlim(left=min(xVals), right=max(xVals))
 	ax.set_ylim(bottom=min(yVals), top=max(yVals))
 	setAxesFont("Roboto-Regular", 12, ax)
@@ -879,24 +914,29 @@ def plotSupplyConundrum():
 def calcAlgos():
 	fig = plt.gcf()
 	ax = plt.gca()
-
-	DeviceParams["Blake256r14"]["example"] = "DCR"
+	# ax.semilogy()
+	ax.xaxis.set_ticks_position("both")
 
 	xcRate = 17.
 	height = getDbHeight()
 	alpha = 0 # getDcrDataProfitability(xcRate, height)
 	apy = getDcrDataAPY()
-	maxProfitability = 2.
+	maxProfitability = .003
 	params = getCurrentParameters()
+	linestyle = lambda i=iter(["-", "--", ":", "-", "--", ":"]): next(i)
+	color = lambda i=iter(["#333333", "#333333", "#333333", "#339999", "#339999", "#339999"]): next(i)
 
 	for algo, device in DeviceParams.items():
-		X = np.linspace(device["min.profitability"]+1e-5, maxProfitability, 100)
+		X = np.linspace(device["min.profitability"]+1e-9, maxProfitability, 100)
 		Y = []
 		for alpha in X:
 			params["roi"] = alpha
 			Y.append(AttackCost(stakeOwnership=1e-9, device=device, **params).attackCost)
-		ax.plot(X, Y)
-	ax.set_ylim(bottom=0, top=1e6)
+		ax.plot([x*100. for x in X], [y/1e6 for y in Y], label=algo, linestyle=linestyle(), color=color(), zorder=2)
+	ax.plot([0, 0], [-1000, 1000], color="#cccccc", linewidth=1, zorder=1)
+	ax.set_ylim(bottom=0, top=129)
+	setAxesFont("Roboto-Regular", 12, ax)
+	plt.legend()
 	plt.show()
 
 
@@ -948,7 +988,7 @@ def calcAlgos():
 # 	print(repr(dataClient.block(idx+1)["time"] - GENESIS_STAMP))
 # print(repr(getCirculatingSupply(GENESIS_STAMP+300*6145)))
 
-calcAlgos()
+# calcAlgos()
 
 # params = getCurrentParameters()
 # params["stakeOwnership"] = 1e-9
@@ -958,8 +998,10 @@ calcAlgos()
 # 	print("--- %s ---" % algo)
 # 	print("retailTerm: %f" % AttackCost(device=device, **params).retailTerm)
 # 	gross = grossEarnings(device, params["roi"])
-# 	print("gross: %f" % gross)
-# 	print("price: %f" % device["price"])
+# 	# print("gross: %f" % gross)
+# 	# print("price: %f" % device["price"])
+# 	# print("power: %f" % device["daily.power.cost"])
+# 	# print("opp: %f" % (out/device["daily.power.cost"]*device["price"], ))
 # 	print(out/gross*device["price"])
 # 	print()
 
@@ -982,19 +1024,28 @@ calcAlgos()
 # print(nethash/MODEL_DEVICE["hashrate"]*MODEL_DEVICE["price"])
 # exit()
 
-
-# xcRate = fetchCMCPrice()
+# params = getCurrentParameters()
 # plotContour(
 # 	AttackCost,
 # 	("stakeSplit", np.arange(0.005, 0.895, 0.89/100)),
 # 	("stakeOwnership", np.arange(0.001, 0.999, 0.998/100)),
-# 	xcRate = xcRate,
-# 	blockHeight = int(dataClient.block.best.height()),
-# 	roi = STEADY_STATE_ROI, # getDcrDataProfitability(xcRate),
-# 	apy = STEADY_STATE_APY, # getDcrDataAPY(),
-# 	rentalRate = NICEHASH_RATE,
-# 	divisor = 1e6,
 # 	fmt = lambda v: "%i M" % int(v),
-# 	lvlCount = 15
+# 	lvlCount = 20,
+# 	contourType = "surface",
+# 	divisor = 1e6,
+# 	rentalRate = NICEHASH_RATE,
+# 	rentalRatio = 0.2,
+# 	**params
 # )
 
+# for device in DeviceParams.values():
+# 	print(device["price"]/device["power"])
+
+# eq = DeviceParams["Equihash <144, 5>"]
+# cn = DeviceParams["Cryptonight V8"]
+# params = getCurrentParameters()
+# params["roi"] = 0.
+# print(AttackCost(stakeOwnership=1e-9, device=eq, **params).attackCost)
+# print(AttackCost(stakeOwnership=1e-9, device=cn, **params).attackCost)
+
+print(json.dumps(DeviceParams, indent=4, sort_keys=True))

@@ -9,37 +9,6 @@ from collections import OrderedDict
 import sqlite3, psycopg2
 import urllib.request as urlrequest
 
-# A few globals
-INF = float("inf")
-VERBOSITY = 1 # 0->low, 1->normal, 2->high
-PACKAGEDIR = os.path.dirname(os.path.realpath(__file__))
-HEADERS = {'Content-Type': 'application/json'}
-A_DAY = 86400
-PRIME_POWER_RATE = 0.05
-SYMBOL = "DCR"
-
-BLOCKTIME = 300
-TICKETPOOL_SIZE = 40960
-TICKETS_PER_BLOCK = 5
-GENESIS_STAMP = 1454954400
-REWARD_WINDOW_SIZE = 6144
-STAKE_SPLIT = 0.3
-POW_SPLIT = 0.6
-TREASURY_SPLIT = 0.1
-
-MODEL_DEVICE = {
-	"model" : "INNOSILICON D9 Miner",
-	"price" : 1699,
-	"release" :  "2018-04-18",
-	"hashrate" : 2.1e12,
-	"power" : 900
-}
-
-MODEL_DEVICE["daily.power.cost"] = PRIME_POWER_RATE*MODEL_DEVICE["power"]/1000*24
-MODEL_DEVICE["min.profitability"] = -1*MODEL_DEVICE["daily.power.cost"]/MODEL_DEVICE["price"]
-MODEL_DEVICE["power.efficiency"] = MODEL_DEVICE["hashrate"]/MODEL_DEVICE["power"]
-MODEL_DEVICE["relative.price"] = MODEL_DEVICE["price"]/MODEL_DEVICE["hashrate"]
-
 # For AESCipher
 import hashlib, base64
 import pyaes
@@ -52,6 +21,60 @@ import binascii
 import logging
 from logging.handlers import RotatingFileHandler
 logger = logging.getLogger("dcr-params")
+
+# A few globals
+INF = float("inf")
+VERBOSITY = 1 # 0->low, 1->normal, 2->high
+PACKAGEDIR = os.path.dirname(os.path.realpath(__file__))
+HEADERS = {'Content-Type': 'application/json'}
+A_DAY = 86400
+AN_HOUR = 3600
+PRIME_POWER_RATE = 0.05
+SYMBOL = "DCR"
+
+BLOCKTIME = 300
+TICKETPOOL_SIZE = 40960
+TICKETS_PER_BLOCK = 5
+GENESIS_STAMP = 1454954400
+REWARD_WINDOW_SIZE = 6144
+STAKE_SPLIT = 0.3
+POW_SPLIT = 0.6
+TREASURY_SPLIT = 0.1
+
+def mkdir(path):
+	if os.path.isdir(path):
+		return True
+	if os.path.isfile(path):
+		return False
+	os.makedirs(path)
+	return True
+
+def yearmonthday(t):
+	return tuple(int(x) for x in time.strftime("%Y %m %d", time.gmtime(t)).split())
+
+def mktime(year, month=None, day=None):
+	if month:
+		if day:
+			return calendar.timegm(time.strptime("%i-%s-%s" % (year, str(month).zfill(2), str(day).zfill(2)), "%Y-%m-%d"))
+		return calendar.timegm(time.strptime("%i-%s" % (year, str(month).zfill(2)), "%Y-%m"))
+	return calendar.timegm(time.strptime(str(year), "%Y"))
+
+def dt2stamp(dt):
+	return int(time.mktime(dt.timetuple()))
+
+def stamp2dayStamp(stamp):
+	return int(mktime(*yearmonthday(stamp)))
+
+def ymdString(stamp):
+	return ".".join([str(x).zfill(2) for x in yearmonthday(stamp)])
+
+MODEL_DEVICE = {	
+	"model" : "INNOSILICON D9 Miner",
+	"price" : 1699,
+	"release" :  mktime(2018, 4, 18),
+	"hashrate" : 2.1e12,
+	"power" : 900
+}
 
 def isList(o):
 	#return isinstance(o,(list, tuple, np.ndarray, zip))
@@ -508,32 +531,13 @@ class DatabaseTable:
 	def addUniqueIndex(self, *indices):
 		self.uniqueIndices.append(indices)
 
-def mkdir(path):
-	if os.path.isdir(path):
-		return True
-	if os.path.isfile(path):
-		return False
-	os.makedirs(path)
-	return True
-
-def yearmonthday(t):
-	return tuple(int(x) for x in time.strftime("%Y %m %d", time.gmtime(t)).split())
-
-def mktime(year, month=None, day=None):
-	if month:
-		if day:
-			return calendar.timegm(time.strptime("%i-%s-%s" % (year, str(month).zfill(2), str(day).zfill(2)), "%Y-%m-%d"))
-		return calendar.timegm(time.strptime("%i-%s" % (year, str(month).zfill(2)), "%Y-%m"))
-	return calendar.timegm(time.strptime(str(year), "%Y"))
-
-def dt2stamp(dt):
-	return int(time.mktime(dt.timetuple()))
-
-def stamp2dayStamp(stamp):
-	return int(mktime(*yearmonthday(stamp)))
-
-def ymdString(stamp):
-	return ".".join([str(x).zfill(2) for x in yearmonthday(stamp)])
+def makeDevice(device):
+	# modifies in-place. Returned as convenience.
+	device["daily.power.cost"] = PRIME_POWER_RATE*device["power"]/1000*24
+	device["min.profitability"] = -1*device["daily.power.cost"]/device["price"]
+	device["power.efficiency"] = device["hashrate"]/device["power"]
+	device["relative.price"] = device["price"]/device["hashrate"]
+	return device
 
 def fetchSettingsFile(filepath):
 	"""
@@ -638,16 +642,14 @@ def getCirculatingSupply(tBlock):
 	vSum += reward*REWARD_WINDOW_SIZE*partialPeriod
 	return vSum
 
-# DCR Utilities
-
-# def honestMult(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
-# 	return ((1/stakeportion - 1)*participation)**winners
+def timeToHeight(t):
+		return int((t-GENESIS_STAMP)/BLOCKTIME)
 
 def binomial(n, k):
 	f = math.factorial
 	return f(n)/f(k)/f(n-k)
 
-def honestMult(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
+def concensusProbability(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
 	halfN = winners/2.
 	k = 0
 	probability = 0
@@ -656,11 +658,10 @@ def honestMult(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
 		k += 1
 	if probability == 0:
 		print("Quitting with parameters %s" % repr((stakeportion, winners, participation)))
-	return 1/probability - 1
+	return probability
 
 def hashportion(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
-	m = honestMult(stakeportion, winners)
-	return m/(m+1)
+	return 1 - concensusProbability(stakeportion, winners)
 
 def grossEarnings(device, roi, energyRate=PRIME_POWER_RATE):
 	return roi*device["price"] + 24*device["power"]*energyRate/1000
@@ -672,6 +673,8 @@ def blockReward(height):
 def dailyPowRewards(height, blockTime=BLOCKTIME, powSplit=POW_SPLIT):
 	return A_DAY/blockTime*blockReward(height)*powSplit
 
+def dailyPosRewards(height, blockTime=BLOCKTIME, stakeSplit=STAKE_SPLIT):
+	return A_DAY/blockTime*blockReward(height)*stakeSplit
 
 def networkDeviceCount(device, xcRate, roi, height=3e5, blockTime=BLOCKTIME, powSplit=POW_SPLIT):
 	return dailyPowRewards(height, blockTime, powSplit)*xcRate/grossEarnings(device, roi)
@@ -696,7 +699,7 @@ class Ay:
 
 def AttackCost(stakeOwnership=None, xcRate=None, blockHeight=None, roi=None, ticketPrice=None, blockTime=BLOCKTIME, powSplit=None, 
 		stakeSplit=None, treasurySplit=TREASURY_SPLIT, rentability=None, nethash=None, winners=TICKETS_PER_BLOCK, participation=1., 
-		poolSize=TICKETPOOL_SIZE, apy=None, attackDuration=A_DAY/2, device=None, rentalRatio=None, rentalRate=None):
+		poolSize=TICKETPOOL_SIZE, apy=None, attackDuration=AN_HOUR, device=None, rentalRatio=None, rentalRate=None):
 	if any([x is None for x in (stakeOwnership, xcRate, blockHeight)]):
 		raise Exception("stakeOwnership, xcRate, and blockHeight are required args/kwargs for AttackCost")
 	if treasurySplit is None:
