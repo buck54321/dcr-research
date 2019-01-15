@@ -39,7 +39,7 @@ These two components are not independent. They are related through $ \sigma(y) $
 P(y) = \sum_{k=0}^{k < N/2}  {{N}\choose{k}}   y^{N-k} \Big( (1-y) \cdot p \Big)^k
 \end{equation}
 %
-where $ {{N}\choose{k}}  $ is a binomial coefficient. $ N $ is set to 5 for Decred, but is left as a paremeter here. The participation ratio, $ p $, is the fraction of stakeholders online and ready to vote, and has historically been very nearly 1. While participation will be taken to be 1 for the remainder of this work, it is important to note that $ p $ could potentially be a target for a denial-of-service attack component. 
+where $ {{N}\choose{k}}  $ is a binomial coefficient. $ N $ is set to 5 for Decred, but is left as a parameter here. The participation ratio, $ p $, is the fraction of stakeholders online and ready to vote, and has historically been very nearly 1. While participation will be taken to be 1 for the remainder of this work, it is important to note that $ p $ could potentially be a target for a denial-of-service attack component. 
 
 The attacker would hold the majority of tickets derived from every $ 1 / P(y) $ valid nonces they are able to generate. Conversely, the honest nodes would be able to achieve consensus on every $ 1 / (1 - P(y)) $ blocks proposed to the honest network. The attacker would need a factor of 
 %
@@ -116,7 +116,7 @@ For further parametrization, it's useful to note the relationship between networ
 H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.024 c / \eta  }
 \end{equation}
 %
-where $\beta$ is the total POW rewards (DCR) payed out daily. The benefit of parametrizing in terms of miner profitability is that the value is self-regulating and tends towards zero, allowing predictions of long-term behavior in a stable market. $\beta$ is dependent on various network parameters as
+where $\beta$ is the total POW rewards (DCR) paid out daily. The benefit of parametrizing in terms of miner profitability is that the value is self-regulating and tends towards zero, allowing predictions of long-term behavior in a stable market. $\beta$ is dependent on various network parameters as
 %
 \begin{equation}
 \beta = \frac{ 86400 R_{pow} }{ t_b } 
