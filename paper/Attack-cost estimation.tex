@@ -1,4 +1,5 @@
 \documentclass[a4paper,12pt]{article}
+\usepackage[margin=1.0in]{geometry}
 \usepackage[numbers]{natbib}
 \setcitestyle{numbers}
 \usepackage{mathtools}
@@ -49,16 +50,16 @@ x(y) = \frac{ 1 / P(y) }{ 1 / ( 1 - P(y) ) } = \frac{ 1 }{ P(y) } - 1
 \begin{wrapfigure}{l}{0.50\textwidth}
   \vspace{-10pt}
   \begin{center}
-    	\includegraphics[width=0.34\textwidth]{sigma}
+    	\includegraphics[width=1.87in]{sigma}
 	\vspace{-10pt}
 	\begin{minipage}[t]{0.35\textwidth}
 	\caption{The threshold of hashpower needed to initiate an attack. \label{sigmafig}}	
 	\end{minipage}
-	\vspace{0pt}
+	\vspace{10pt}
   \end{center}
 \end{wrapfigure}
 %
-times the honest hashpower in order to outpace the honest chain. There is an implicit assumption in $ x(y) $ that the attacker's hashpower is not already part of the existing honest hashpower before the attack. If this assumption is dropped, the hashpower threshold can be minimized further. Stated otherwise, assume that the attacker's hashpower is already mining honestly on the main chain before being apruptly redirected to the attacker's chain. Then
+times the honest hashpower in order to outpace the honest chain. Using $ x(y) $ as a hashrate multiplier to calculate the attacker's required hashpower carries an implicit assumption that the attacker's hashpower is not already part of the existing honest hashpower before the attack. If this assumption is dropped, the threshold can be minimized further. Stated otherwise, assume that the attacker's hashpower is already mining honestly on the main chain before being apruptly redirected to the attacker's chain. Then
 %
 \begin{equation}
 \label{sigmaeq}
@@ -67,7 +68,7 @@ times the honest hashpower in order to outpace the honest chain. There is an imp
 %
 is the fraction of total network hashrate an attacker would need to redirect to initiate an attack. 
 
-If the network hashrate, $ H_{net} $, is known, one could use $ x(y) $ to calculate how much hashing power an attacker would need to control, and subsequently estimate how much it would cost to purchase and/or rent. 
+If the network hashrate, $ H_{net} $, is known, then $ x(y) $ can be used to calculate how much hashpower an attacker would need to control, and subsequently estimate how much it would cost to purchase and/or rent. 
 
 
 \section{Work term}
@@ -147,34 +148,12 @@ Equation \ref{hafig} assumes units of seconds for block time and fiat/kWh for el
 
 
 \section{Stake term}
-%
-\begin{figure}[!b]
-\hrule
-	\vspace{5pt}
-	\begin{center}
-	\includegraphics[width=0.62\textwidth]{stakereturn}
-\begin{minipage}[t]{0.85\textwidth}
-	\caption{As Decred staking gains acceptance as an investment product, the returns are approaching those of other common investment products. \label{stakereturnfig}}
-	\end{minipage}
-  	\end{center}
-\end{figure}
-%
+
 The ticket fraction, $y$, is the ratio of attacker controlled tickets to all tickets in the stake pool. For an average stake difficulty (ticket price), $ p_t $, and a ticket pool size of $ Z $ tickets, the stake term is expressed as 
 %
 \begin{equation}
 S = yZXp_t
 \end{equation}
-%
-%
-\begin{figure}[h]
-	\begin{center}
-	\includegraphics[width=0.55\textwidth]{returnsupply}
-\begin{minipage}[t]{0.85\textwidth}
-	\caption{There is a lower limit to the steady-state APY where the total stake is equal to the total supply. The position of the limit can be modified by increasing or decreasing the fraction of the block reward given to ticket holders. \label{returnsupplyfig}}
-	\end{minipage}
-  	\end{center}
-	\hrule
-\end{figure}
 %
 Historically, the stake difficulty has shown relative stability, even through chaotic market changes, so variations in the ticket term have mostly followed the fiat exchange rate. 
 
@@ -183,6 +162,17 @@ Similar to the method used on the work term, the stake term can be further param
 \begin{equation}
 \alpha_s = \bigg( \frac{ p_t + (R_{pos} / N) }{ p_t } \bigg)^{365/28} - 1
 \end{equation}
+%
+\begin{figure}[!t]
+	\begin{center}
+	\includegraphics[width=3.18in]{stakereturn}
+\begin{minipage}[t]{0.85\textwidth}
+	\caption{As Decred staking gains acceptance as an investment product, the returns are approaching those of other common investment products. \label{stakereturnfig}}
+	\end{minipage}
+  	\end{center}
+	\hrule
+	\vspace{5pt}
+\end{figure}
 %
 with $ R_{pos} = s_s R_{tot} $ ($ s_s $ is currently set at 0.3). Here again, a type of profitability is chosen for parametrization due to its tendency towards some natural value. APY in particular is chosen for convenience of comparison with other investment products. Contrary to equilibrium value of $ \alpha_w $, the asymptotic value of $ \alpha_s $ is not zero. As shown in figure \ref{stakereturnfig}, as Decred staking gains acceptance as an institutional investment product, the return rate approaches the rates of other common investments. The typical APY of institutional investment products ranges from around 2\% for bonds to about 7\% for stocks. Because of the limited supply of Decred, there is also a hard lower limit on the steady-state APY possible when $ p_t = C(t) / Z $,
 %
@@ -199,11 +189,23 @@ The stake term is expressed fully as
 S = \frac{ yZXs_sR_{tot} }{ N [ ( \alpha_s + 1)^{28/365} - 1 ] }
 \end{equation} 
 
+%
+\begin{figure}[!t]
+	\begin{center}
+	\includegraphics[width=3.05in]{returnsupply}
+\begin{minipage}[t]{0.85\textwidth}
+	\caption{There is a lower limit to the steady-state APY where the total stake is equal to the total supply. The position of the limit can be modified by increasing or decreasing the fraction of the block reward given to ticket holders. \label{returnsupplyfig}}
+	\end{minipage}
+  	\end{center}
+	\hrule
+\end{figure}
+%
+
 \section{Application}
 
-To make use of the PCA, typically a starting position in parameter space is chosen, and parameters are varied one or two at a time around that position, treating all others as either constant, or changing in some known way with the chosen variable(s). For the sake of the following examples, the starting position is chosen to be the conditions at the time of writing ($ \chi = 17.5, \alpha_s = 0.153, h=309,000 $), though the general trends are valid over a wide range of conditions.
+To make use of the PCA, typically a starting position in parameter space is chosen, and parameters are varied one or two at a time around that position, treating all others as either constant, or changing in some known way with the chosen variable(s). For the sake of the following examples, the starting position is chosen to be the conditions at the time of writing ($ X = 17.5, \alpha_s = 0.153, h=309,000 $), though the general trends are valid over a wide range of conditions. A cursory survey of rental mining equipment availabiity indicates a low rentability, $ a / H_{net} < 0.01 $. For the rest of this work, $ a = 0 $ will be used.
 
-To demonstrate the application of the relations developed above, an attempt is made here to investigate a couple of common questions. 
+To demonstrate the application of the relations developed above, an attempt is made here to investigate a few common questions. 
 
 \subsection{Which mining algorithm provides the highest network security? }
 
@@ -222,7 +224,7 @@ C_{retail} \approx \frac{ Q }{ \alpha_w }
 \begin{figure}[t!]
 \vspace{-10pt}
 	\begin{center}
-	\includegraphics[width=0.80\textwidth]{algo-pcoa}
+	\includegraphics[width=4.4in]{algo-pcoa}
 \begin{minipage}[t]{0.85\textwidth}
 	\caption{The difference in PCA between mining algorithms is more significant at low profitabilities. Those algorithms that maximize $ p_d / \omega_d $ have higher PCA across the range of profitabilities.}
 	\end{minipage}
@@ -239,11 +241,11 @@ There is a minimum profitability given in the zero-gross limit of equation \ref{
 \alpha_{w, min} = - \frac{ 0.024 c }{ \eta \rho }
 \end{equation}
 %
-which is a lower asymptotic value for retail capital.
+which is an asymptote for $ C_{retail}(\alpha_w) $.
 
-At the time of writing, Decred mining profitability is less than zero ($ \alpha_w = \num{-2.7e-4} $), resulting in a PCA higher than the ''steady-state'' condition. This is the ideal state for a blockchain. It indicates a good short-term outlook among miners, as the only way to recoup electricity expenditures is if the exchange rate goes up. 
+At the time of writing, Decred mining profitability is less than zero ($ \alpha_w = \num{-2.7e-4} $), resulting in a PCA higher than the ''steady-state'' condition. This is the ideal state for a blockchain, as the PCA is higher than even the zero-profitability condition. It also indicates a good short-term outlook among miners, as the only way to recoup electricity expenditures is if the exchange rate goes up. 
 
-Maximizing the device factor, $ p_d / \omega_d = \eta \rho $, can raise the PCA, as well as the minimum profitability. Further investigation may seek algorithms or alternative consensus mechanisms which can use more hardware but less power.
+Maximizing the device factor, $ p_d / \omega_d = \eta \rho $, can raise the PCA, as well as the minimum profitability. Further investigation may seek mining algorithms or alternative consensus mechanisms which can use more hardware but less power.
 
 \subsection{What is the best split of the block reward?}
 
@@ -251,25 +253,57 @@ Transient behavior associated with an abrupt change to a blockchain parameter wo
 
 The stake split, $ s_s $, of $ R_{tot} $ imposes conditions on the treasury split, $ s_t $, and the miner split, $ s_w, $ by the relation $ s_t + s_s + s_w = 1 $. The treasury split is left at 0.1 here. 
 %
-\begin{figure}[b!]
-\vspace{5pt}
-\hrule
-\vspace{10pt}
+\begin{figure}[t!]
 	\begin{center}
-	\includegraphics[width=0.60\textwidth]{stakesplit}
+	\includegraphics[width=3.05in]{stakesplit}
 \begin{minipage}[t]{0.85\textwidth}
-	\caption{The PCA varies with stake split (fraction of block reward given to ticket holders) and stake ownership (portion of ticket pool under attacker control).}
+	\caption{The PCA varies with stake split (fraction of block reward given to ticket holders) and stake ownership (portion of ticket pool under attacker control). All other parameters are network parameters on January 15th, 2019.}
 	\end{minipage}
   	\end{center}
-\vspace{-15pt}
+\vspace{5pt}
+\hrule
 \end{figure}
 %
-It is tempting to vary $ s_s $, and consequently $ s_w $, and minimize $ A(y) $ on $ [ 0, 1 ] $ at every point along the way. That approach ignores nuanced economics that would occur if the attacker attempted to purchase a large portion of the ticket pool. How this would affect the stake difficulty can be predicted, but such an action would also presumably spike the exchange rate as the attacker purchased Decred from exchanges to spend on tickets, which is harder to predict. In short, there is more confdence in low-$ y $ predictions than in predictions of the high-$ y $ region. Low-$ y $ conditions also require less time investment from an attacker, as acquiring a significant portion of the stake pool would require a lengthy ticket-buying campaign. 
+It is tempting to vary $ s_s $, and consequently $ s_w $, and minimize $ A(y) $ on $ [ 0, 1 ] $ at every point along the way, but that approach ignores nuanced economics that would occur if the attacker attempted to purchase a large portion of the ticket pool. How this would affect the stake difficulty can be predicted, but this action would also presumably spike the exchange rate as the attacker purchased Decred from exchanges to spend on tickets. The variation of $ X $ with $ y $ at high-$y$ is harder to predict. In short, there is more confidence in low-$ y $ predictions than in predictions of the high-$ y $ region. Low-$ y $ conditions also require less time investment from an attacker, as acquiring a significant portion of the stake pool would require a lengthy ticket-buying campaign. 
 
 Figure 5 shows the variation of attack cost with $ y $ and $ s_s $, in the zero-rentability case. The current network configuration of $ s_s = 0.3 $ is a good balance between high entry point at low-$y$, and gradual dropoff at $y > 0.5$. 
 
+\subsection{Is Decred more secure than a pure proof-of-work blockchain?}
 
+Noting that $W \propto R_{pow} X $, we premise the comparison to a pure-POW blockchain on the equivalence of the fiat-converted inflationary rate,
+%
+\begin{equation}
+\frac{  R_{tot} X }{ t_b } = \frac{ R_{tot, pow} X_{pow} }{ t_{b, pow} }
+\end{equation}
+%
+with appropriate considerations for the treasury split. Setting $ S \rightarrow 0 $, $ s_w \rightarrow (1 - s_t)  $,  and $ \sigma \rightarrow 0.5 $ results in the pure-POW analogue of the PCA (here at zero-rentability),
+%
+\begin{equation}
+\label{ purepow }
+A_{ pow } = \frac{ (1 - s_t) Q }{ 2 (\alpha_w + 0.024 c / \eta\rho) }
+\end{equation}
+%
+or alternatively, 
+%
+\begin{equation}
+A_{ pow } = \frac{ 1 - s_t }{ 2 s_w } A(0)
+\end{equation}
+%
+For an attacker with zero ticket fraction, the Decred consensus mechanism provides a boost of $ 2 s_w / ( 1 - s_t ) $ to PCA. With current network configuration, the boost is $ 4 / 3 $, or a 33\% increase over pure-POW. As shown in figure \ref{ycont}, $ A(y < \sim 0.25) \ge A(0) $, so an attacker would have to purchase about a quarter of the ticket pool to see any reduction in PCA. 
 
+The ticket fraction at which the hybrid PCA falls below the pure-POW PCA is found at the point $ A(y_{eq}) = A_{pow} $. Decred currently has a $ y_{eq} $ of about 0.48, so an attacker would need to control about half the ticket pool to get the PCA below the pure-POW level. 
+%
+\begin{figure}[h!]
+	\begin{center}
+	\includegraphics[width=3.84in]{y-contributions}
+\begin{minipage}[t]{0.85\textwidth}
+	\caption{With increasing ticket fraction, the PCA shifts from work dominated to stake dominated. At point $ y_{eq} $, the PCA is equal to that of a pure-POW blockchain with matching rate of fiat-converted inflation. \label{ycont}}
+	\end{minipage}
+  	\end{center}
+	\hrule
+	\vspace{5pt}
+\end{figure}
+%
 
 % \bibliography{attack}{}
 % \bibliographystyle{unsrt}
@@ -287,32 +321,31 @@ Miner net daily earnings can be written as
 E_{net} = \alpha_w p_d = \underbracket{ E_g }_{\text{gross profit}} -  \underbracket{ \frac{ 24 \omega_d c }{ 1000 } }_{ \text{ power costs } } 
 \end{equation}
 %
-which defines a profitability, $ \alpha_w $. The profitability can be thought of as the fraction of device cost retrieved in a day of mining. Profitability self-regulates in that if profitability gets too high, entrepeneurial miners will buy more hashpower and profitability will drop. If profitability drops below zero, it becomes cheaper to buy DCR outright, so miners will turn off their equipment and it will tend back towards zero. 
+which defines a profitability, $ \alpha_w $. The profitability can be thought of as the fraction of device cost retrieved in a day of mining. Profitability self-regulates in that if profitability gets too high, entrepeneurial miners will buy more hashpower and profitability will drop. If profitability drops below zero, it becomes cheaper to buy DCR outright, so miners will presumably turn off their equipment and it will tend back towards zero. 
 
-
-\begin{figure}[t!]
-	\centering
-	\vspace{-5pt}
-	\hrule
-	\vspace{5pt}
-	\includegraphics[scale=1.60]{profitability}
-	\caption{Mining profitability shows immediate response to price spikes, followed by decay towards zero when the price is stable. \label{profitabilityfig}}
-	\vspace{5pt}
-\end{figure}
-
-The fiat value of block rewards payed out to miners in a given day can be written in terms of total POW portion of the block reward, $ \beta $ and the fiat exchange rate.
+The total fiat-converted value of block reward paid to miners daily, $ Q $, depends on network parameters and the fiat exchange rate, $ X $ as
 %
 \begin{equation}
-Q = \beta X
+Q = \beta X 
+\end{equation}
+\begin{equation}
+\beta = \frac{ 86400 R_{pow} }{ t_b }
 \end{equation}
 %
 
-Using the model device statistics, the total number of devices on the network, $ N_d $, can be expressed in two different ways. 
+The total number of devices on the network, $ N_d $, can be expressed in two different ways. 
 %
 \begin{equation}
 N_d = \frac{ Q }{ E_{g} } = \frac{ H_{ net } }{ h_d }
 \end{equation}
 %
+\begin{figure}[t!]
+	\centering
+	\includegraphics[width=5.77in]{profitability}
+	\caption{Mining profitability shows immediate response to price spikes, followed by decay towards zero when the price is stable. \label{profitabilityfig}}
+	\vspace{5pt}
+	\hrule
+\end{figure}
 
 Combining this relation with equation \ref{enet}, and substituting alternative device parameters $ \rho $ and $ \eta $, yields an expression for network hashrate. 
 %
@@ -320,13 +353,15 @@ Combining this relation with equation \ref{enet}, and substituting alternative d
 H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.024 c / \eta  }
 \end{equation}
 %
+The retail capital, $ C_{retail} $, is the total retail value of all devices mining on the network, and is given by $ C_{ retail } = N_d p_d = H_{net} \rho $. The retail capital is the basis for calculating the retail terms of the PCA.
+
+\newpage
 
 \begin{table}[h!]
+\centering
 \footnotesize
 \renewcommand{\arraystretch}{1.25}% Spread rows out...
-	\vspace{5pt}
-	\hrule
-	\vspace{6pt}
+
 \begin{tabular}{l|c|c|c|c|}
 \cline{2-5}
                                            & \multicolumn{2}{c|}{GPU}                      & \multicolumn{2}{c|}{ASIC}                      \\ \cline{2-5} 
@@ -336,11 +371,10 @@ H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.024 c / \eta  }
 \end{tabular}
 	\caption{Power efficiency, $ \eta $, and relative cost, $ \rho $, of the model devices used for the ranges in figure \ref{profitabilityfig}.}
 	\vspace{5pt}
-	\hrule
-	\vspace{6pt}
 \end{table}
 
 \begin{table}[h!]
+\centering
 \footnotesize
 \renewcommand{\arraystretch}{1.25}% Spread rows out...
   \begin{tabular}{ | c | c | l | c | c | c | }
@@ -356,7 +390,7 @@ H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.024 c / \eta  }
 	\caption{Model devices for mining algortihms used in section 5.2.}
 \end{table}
 
-\newpage
+\clearpage
 
 \begin{center}
 \small
@@ -369,6 +403,7 @@ H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.024 c / \eta  }
 	$ \alpha_s $ & $ - $ & \makecell[l]{Stake return. Annual percentage yield.} \\ \hline
 	$ \beta $ & DCR & \makecell[l]{POW payout. Total decred paid to POW miners\\ per day.} \\ \hline
 	$ c $ & fiat/energy & Electricity rate. Common units of \$/kWh. \\ \hline
+	$ C_{retail} $ & fiat & \makecell[l]{Retail capital. Total value of all devices mining\\ on the network.} \\ \hline
 	$ D $ & fiat & Retail equipment cost. \\ \hline
 	$ E_g $ & fiat & Model device gross daily earnings, before power costs. \\ \hline
 	$ E_{net} $ & fiat & Model device net daily earnings. \\ \hline
@@ -390,15 +425,8 @@ H_{net} = \frac{ \beta X }{ \alpha_w \rho + 0.024 c / \eta  }
 	$ S $ & fiat & Stake term. Total cost of attack spent on tickets. \\ \hline
 	$ s_s $ & $ - $ & \makecell[l]{POS rewaard share Fraction of $R_{tot}$. given as a \\stake reward. }\\ \hline
 	$ s_w $ & $ - $ & \makecell[l]{ POW reward share. Fraction of $R_{tot} $ given as a \\POW reward. }\\ \hline
+	$ s_t $ & $ - $ & \makecell[l]{ Treasury reward share. Fraction of $R_{tot} $ given as a \\to the Decred treasury. }\\ \hline
 	$ \sigma $ & $ - $ & \makecell[l]{ Hashportion. The minimum attacker hashpower, as a \\fraction of total network hashpower.} \\ \hline
-  \end{tabular}
-\end{center}	
-
-\begin{center}
-\small
-  \begin{tabular}{ | c | c | l | }
-    \hline
-	\textbf{ symbol } & \textbf{ unit } & \textbf{ description } \\ \hline
 	$ t_a $ & time & Attack duration. Time required to carry out attack. \\ \hline
 	$ t_b $ & time & Block time. The network block time target. \\ \hline
 	$ W $ & fiat & Work term. Total equipment-related costs of attack. \\ \hline

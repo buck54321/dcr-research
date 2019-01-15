@@ -687,21 +687,21 @@ def calcTicketPrice(apy, height, winners=TICKETS_PER_BLOCK, stakeSplit=STAKE_SPL
 	return Rpos/(winners*((apy + 1)**(25/365.) - 1))
 
 class Ay:
-	def __init__(self, retailTerm, rentalTerm, stakeTerm, stakeOwnership):
+	def __init__(self, retailTerm, rentalTerm, stakeTerm, ticketFraction):
 		self.retailTerm = retailTerm
 		self.rentalTerm = rentalTerm
 		self.stakeTerm = stakeTerm
 		self.workTerm = rentalTerm + retailTerm
 		self.attackCost = retailTerm + rentalTerm + stakeTerm
-		self.stakeOwnership = stakeOwnership
+		self.ticketFraction = ticketFraction
 	def __str__(self):
-		return "<AttackCost: stakeOwnership %.3f, workTerm %i, stakeTerm %i, attackCost %i>" % (self.stakeOwnership, self.workTerm, self.stakeTerm, self.attackCost)
+		return "<AttackCost: ticketFraction %.3f, workTerm %i, stakeTerm %i, attackCost %i>" % (self.ticketFraction, self.workTerm, self.stakeTerm, self.attackCost)
 
-def AttackCost(stakeOwnership=None, xcRate=None, blockHeight=None, roi=None, ticketPrice=None, blockTime=BLOCKTIME, powSplit=None, 
+def AttackCost(ticketFraction=None, xcRate=None, blockHeight=None, roi=None, ticketPrice=None, blockTime=BLOCKTIME, powSplit=None, 
 		stakeSplit=None, treasurySplit=TREASURY_SPLIT, rentability=None, nethash=None, winners=TICKETS_PER_BLOCK, participation=1., 
 		poolSize=TICKETPOOL_SIZE, apy=None, attackDuration=AN_HOUR, device=None, rentalRatio=None, rentalRate=None):
-	if any([x is None for x in (stakeOwnership, xcRate, blockHeight)]):
-		raise Exception("stakeOwnership, xcRate, and blockHeight are required args/kwargs for AttackCost")
+	if any([x is None for x in (ticketFraction, xcRate, blockHeight)]):
+		raise Exception("ticketFraction, xcRate, and blockHeight are required args/kwargs for AttackCost")
 	if treasurySplit is None:
 		raise Exception("AttackCost: treasurySplit cannot be None")
 
@@ -729,8 +729,8 @@ def AttackCost(stakeOwnership=None, xcRate=None, blockHeight=None, roi=None, tic
 		if not apy:
 			raise Exception("minimizeY: Either a ticketPrice or an apy must be provided")
 	ticketPrice = calcTicketPrice(apy, blockHeight, winners, stakeSplit)
-	stakeTerm = stakeOwnership*poolSize*ticketPrice*xcRate
-	hashPortion = hashportion(stakeOwnership, winners, participation)
+	stakeTerm = ticketFraction*poolSize*ticketPrice*xcRate
+	hashPortion = hashportion(ticketFraction, winners, participation)
 	attackHashrate = nethash*hashPortion
 	rent = rentability if rentability is not None else attackHashrate*rentalRatio if rentalRatio is not None else 0
 	rentalPart = min(rent, attackHashrate)
@@ -738,7 +738,30 @@ def AttackCost(stakeOwnership=None, xcRate=None, blockHeight=None, roi=None, tic
 	rentalTerm = rentalPart*rentalRate/86400*attackDuration
 	retailTerm = retailPart*( device["relative.price"] + device["power"]/device["hashrate"]*PRIME_POWER_RATE/1000/3600*attackDuration )
 	attackCost = rentalTerm + retailTerm + stakeTerm
-	return Ay(retailTerm, rentalTerm, stakeTerm, stakeOwnership)
+	return Ay(retailTerm, rentalTerm, stakeTerm, ticketFraction)
+
+def purePowAttackCost(xcRate=None, blockHeight=None, roi=None, blockTime=BLOCKTIME, treasurySplit=TREASURY_SPLIT, 
+	rentability=None, nethash=None,attackDuration=AN_HOUR, device=None, rentalRatio=None, rentalRate=None, **kwargs):
+	if any([x is None for x in (xcRate, blockHeight)]):
+		raise Exception("xcRate and blockHeight are required args/kwargs for PurePowAttackCost")
+	device = device if device else MODEL_DEVICE
+	if nethash is None:
+		if roi is None: # mining ROI could be zero 
+			raise Exception("minimizeY: Either a nethash or an roi must be provided")
+		nethash = networkHashrate(device, xcRate, roi, blockHeight, blockTime, 1-treasurySplit)
+	if rentability or rentalRatio:
+		if not rentalRate:
+			raise Exception("minimizeY: If rentability is non-zero, rentalRate must be provided")
+	else:
+		rentalRate = 0
+	attackHashrate = 0.5*nethash
+	rent = rentability if rentability is not None else attackHashrate*rentalRatio if rentalRatio is not None else 0
+	rentalPart = min(rent, attackHashrate)
+	retailPart = attackHashrate - rentalPart
+	rentalTerm = rentalPart*rentalRate/86400*attackDuration
+	retailTerm = retailPart*( device["relative.price"] + device["power"]/device["hashrate"]*PRIME_POWER_RATE/1000/3600*attackDuration )
+	attackCost = rentalTerm + retailTerm
+	return Ay(retailTerm, rentalTerm, 0, 0)
 
 def minimizeAy(*args, grains=100, **kwargs):
 	lowest = INF

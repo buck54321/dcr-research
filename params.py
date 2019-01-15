@@ -860,11 +860,43 @@ def plotContour(processor, var1, var2, divisor=None, fmt="%i", lvlCount=15, cont
 		ax.plot_surface(X, Y, Z, cmap='plasma_r')
 	else:
 		raise Exception("plotContour: Unknown contourType: %s" % contourType)
-	ax.set_xlim(left=min(xVals), right=max(xVals))
-	ax.set_ylim(bottom=min(yVals), top=max(yVals))
+	ax.set_xlim(left=0, right=0.9)
+	ax.set_ylim(bottom=0, top=1)
 	setAxesFont("Roboto-Regular", 12, ax)
 	plt.show()
 
+def plotLine(variable, divisor=1, **kwargs):
+	# variable should be a dictionary with one key, which matches an kwargs of AttackCost,
+	# and whose value is a list or numpy array of points on the x axis.
+	fig = plt.gcf()
+	ax = plt.gca()
+	plt.subplots_adjust(0.22, 0.2, 0.9, 0.9, 0, 0.1)
+	params = getCurrentParameters()
+	recursiveUpdate(params, kwargs)
+	k = next(iter(variable))
+	X = variable[k]
+	Ytotal = []
+	Yrental = []
+	Yretail = []
+	Ywork = []
+	Ys = []
+	for x in X:
+		params[k] = x
+		A = AttackCost(**params)
+		Ytotal.append(A.attackCost)
+		Yrental.append(A.retailTerm)
+		Yretail.append(A.rentalTerm)
+		Ywork.append(A.workTerm)
+		Ys.append(A.stakeTerm)
+	linestyle = lambda i=iter(["--", ":", "-."]): next(i)
+	ax.plot(X, [y/divisor for y in Ytotal], color="#333333", label="sum")
+	ax.plot(X, [y/divisor for y in Ywork], color="#777777", linestyle=linestyle(), label="work")
+	# ax.plot(X, [y/divisor for y in Yretail], color="#777777", linestyle=linestyle(), label="retail")
+	# ax.plot(X, [y/divisor for y in Yrental], color="#777777", linestyle=linestyle(), label="rental")
+	ax.plot(X, [y/divisor for y in Ys], color="#777777", linestyle=linestyle(), label="stake")
+	setAxesFont("Roboto-Regular", 12, ax)
+	plt.legend()
+	plt.show()
 
 def plotRentability(y):
 	fig = plt.gcf()
@@ -931,7 +963,7 @@ def calcAlgos():
 		Y = []
 		for alpha in X:
 			params["roi"] = alpha
-			Y.append(AttackCost(stakeOwnership=1e-9, device=device, **params).attackCost)
+			Y.append(AttackCost(ticketFraction=1e-9, device=device, **params).attackCost)
 		ax.plot([x*100. for x in X], [y/1e6 for y in Y], label=algo, linestyle=linestyle(), color=color(), zorder=2)
 	ax.plot([0, 0], [-1000, 1000], color="#cccccc", linewidth=1, zorder=1)
 	ax.set_ylim(bottom=0, top=129)
@@ -991,7 +1023,7 @@ def calcAlgos():
 # calcAlgos()
 
 # params = getCurrentParameters()
-# params["stakeOwnership"] = 1e-9
+# params["ticketFraction"] = 1e-9
 # params["roi"] = 0.05
 # out = dailyPowRewards(height=params["blockHeight"])*params["xcRate"]
 # for algo, device in DeviceParams.items():
@@ -1013,30 +1045,38 @@ def calcAlgos():
 # blockHeight = int(dataClient.block.best.height())
 # roi = getDcrDataProfitability(xcRate)
 # apy = getDcrDataAPY()
-# plotShareRatios(stakeOwnership=0.5, xcRate=xcRate, blockHeight=blockHeight, roi=roi, apy=apy)
+# plotShareRatios(ticketFraction=0.5, xcRate=xcRate, blockHeight=blockHeight, roi=roi, apy=apy)
 
 # xcRate = fetchCMCPrice()
 # blockHeight = int(dataClient.block.best.height())
 # roi = getDcrDataProfitability(xcRate)
 # apy = getDcrDataAPY()
-# print(AttackCost(stakeOwnership=0.001, xcRate=xcRate, blockHeight=blockHeight, roi=roi, apy=apy))
+# print(AttackCost(ticketFraction=0.001, xcRate=xcRate, blockHeight=blockHeight, roi=roi, apy=apy))
 # nethash = getDcrDataHashrate()
 # print(nethash/MODEL_DEVICE["hashrate"]*MODEL_DEVICE["price"])
 # exit()
 
-# params = getCurrentParameters()
-# plotContour(
-# 	AttackCost,
-# 	("stakeSplit", np.arange(0.005, 0.895, 0.89/100)),
-# 	("stakeOwnership", np.arange(0.001, 0.999, 0.998/100)),
-# 	fmt = lambda v: "%i M" % int(v),
-# 	lvlCount = 20,
-# 	contourType = "surface",
-# 	divisor = 1e6,
+# plotLine(
+# 	{"ticketFraction": np.linspace(0.001, 0.999, 100)},
+# 	# rentability = 200e12,
+# 	# attackDuration = A_DAY,
 # 	rentalRate = NICEHASH_RATE,
-# 	rentalRatio = 0.2,
-# 	**params
+# 	divisor = 1e6
 # )
+
+params = getCurrentParameters()
+plotContour(
+	AttackCost,
+	("stakeSplit", np.linspace(1e-9, 0.9, 250)),
+	("ticketFraction", np.linspace(1e-9, 1, 250)),
+	fmt = lambda v: "%i M" % int(v),
+	lvlCount = 20,
+	contourType = "contourf",
+	divisor = 1e6,
+	rentalRate = NICEHASH_RATE,
+	# rentalRatio = 0.2,
+	**params
+)
 
 # for device in DeviceParams.values():
 # 	print(device["price"]/device["power"])
@@ -1045,7 +1085,22 @@ def calcAlgos():
 # cn = DeviceParams["Cryptonight V8"]
 # params = getCurrentParameters()
 # params["roi"] = 0.
-# print(AttackCost(stakeOwnership=1e-9, device=eq, **params).attackCost)
-# print(AttackCost(stakeOwnership=1e-9, device=cn, **params).attackCost)
+# print(AttackCost(ticketFraction=1e-9, device=eq, **params).attackCost)
+# print(AttackCost(ticketFraction=1e-9, device=cn, **params).attackCost)
 
-print(json.dumps(DeviceParams, indent=4, sort_keys=True))
+# exit(str(AttackCost(ticketFraction=1e-9, **getCurrentParameters())))
+
+# match = (1-TREASURY_SPLIT)/(2*POW_SPLIT)
+# closest = INF
+# best = None
+# params = getCurrentParameters()
+# pure = purePowAttackCost(**params).attackCost
+# hybrid = lambda y: AttackCost(ticketFraction=y, **params).attackCost
+# for y in np.linspace(1e-9, 0.99999, 1000):
+# 	dif = abs(hybrid(y) - pure)
+# 	if dif < closest:
+# 		closest = dif
+# 		best = y
+# exit(str(best))
+
+
