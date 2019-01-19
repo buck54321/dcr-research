@@ -10,7 +10,7 @@ import imageio
 from pydcrdata import DcrDataClient
 from PIL import Image, ImageFilter
 
-APPDIR = "C:\\Users\\buck\\AppData\\Local\\dcr"
+APPDIR = os.path.join(PACKAGEDIR, "data")
 # NiceHash price for Decred 0.0751/PH/day
 NICEHASH_RATE = 0.0751/1e12
 STEADY_STATE_ROI = 0
@@ -971,6 +971,48 @@ def calcAlgos():
 	plt.legend()
 	plt.show()
 
+def plotBlockCreationTime():
+	fig = plt.gcf()
+	ax = plt.gca()
+	plt.subplots_adjust(0.2, 0.2, 0.8, 0.8, 0, 0.1)
+	ax.semilogy()
+
+	X = np.linspace(1e-9, 1.-1e-9, 1000)
+	Y = []
+	Y2 = []
+	for stakeOwnership in X:
+		fullPower = 1/concensusProbability(stakeOwnership)*BLOCKTIME/AN_HOUR
+		print(stakeOwnership)
+		minPower = fullPower/hashportion(stakeOwnership)
+		Y.append(fullPower)
+		Y2.append(fullPower/hashportion(stakeOwnership))
+
+	yTicks = [5/60., 1, 24, 24*30, 24*365]
+	yLabels = ["$ t_b $", "hour", "day", "month", "year"]
+	ax.set_yticks(yTicks)
+	ax.set_yticklabels(yLabels)
+	for y in yTicks:
+		ax.plot([-100, 200], [y, y], linewidth=1, color="#dddddd", zorder=1)
+	
+	ax.set_ylim(bottom=1e-2, top=24*365*1.1)
+	left, right = 0, 1.
+	ax.set_xlim(left=left, right=right)
+
+	ticketPrice = dataClient.stake.diff()["current"]
+	xcFactor = fetchCMCPrice()*TICKETPOOL_SIZE*ticketPrice/1e6
+
+	# ax2 = ax.twiny()
+	# ax2.set_xlim(left=left/xcFactor, right=right/xcFactor)
+	# setAxesFont("Roboto-Regular", 12, ax2)
+
+	setAxesFont("Roboto-Regular", 12, ax)
+	# ax.plot([x*xcFactor for x in X], Y, color="#333333")
+	ax.plot(X, Y, color="#555555", zorder=20)
+	ax.plot(X, Y2, color="#555555", zorder=20)
+	ax.fill_between(X, Y, Y2, color="#00000022", zorder=10)
+
+	plt.show()
+
 
 
 	
@@ -1064,31 +1106,19 @@ def calcAlgos():
 # 	divisor = 1e6
 # )
 
-params = getCurrentParameters()
-plotContour(
-	AttackCost,
-	("stakeSplit", np.linspace(1e-9, 0.9, 250)),
-	("ticketFraction", np.linspace(1e-9, 1, 250)),
-	fmt = lambda v: "%i M" % int(v),
-	lvlCount = 20,
-	contourType = "contourf",
-	divisor = 1e6,
-	rentalRate = NICEHASH_RATE,
-	# rentalRatio = 0.2,
-	**params
-)
-
-# for device in DeviceParams.values():
-# 	print(device["price"]/device["power"])
-
-# eq = DeviceParams["Equihash <144, 5>"]
-# cn = DeviceParams["Cryptonight V8"]
 # params = getCurrentParameters()
-# params["roi"] = 0.
-# print(AttackCost(ticketFraction=1e-9, device=eq, **params).attackCost)
-# print(AttackCost(ticketFraction=1e-9, device=cn, **params).attackCost)
-
-# exit(str(AttackCost(ticketFraction=1e-9, **getCurrentParameters())))
+# plotContour(
+# 	AttackCost,
+# 	("stakeSplit", np.linspace(1e-9, 0.9, 250)),
+# 	("ticketFraction", np.linspace(1e-9, 1, 250)),
+# 	fmt = lambda v: "%i M" % int(v),
+# 	lvlCount = 20,
+# 	contourType = "contourf",
+# 	divisor = 1e6,
+# 	rentalRate = NICEHASH_RATE,
+# 	# rentalRatio = 0.2,
+# 	**params
+# )
 
 # match = (1-TREASURY_SPLIT)/(2*POW_SPLIT)
 # closest = INF
@@ -1103,4 +1133,17 @@ plotContour(
 # 		best = y
 # exit(str(best))
 
+# params = Generic_class(**getCurrentParameters())
+# exit(str(params.xcRate*TICKETPOOL_SIZE*0.07*calcTicketPrice(params.apy, params.blockHeight)))
+# match = 1/288.
+# best = None
+# closest = INF
+# for y in np.linspace(1e-9, 1., 1000):
+# 	p = concensusProbability(y)
+# 	d = abs(match - p)
+# 	if d < closest:
+# 		best = y
+# 		closest = d
+# exit(str(best))
 
+plotBlockCreationTime()

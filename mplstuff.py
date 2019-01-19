@@ -1,3 +1,4 @@
+from commonfunctions import *
 import time
 import matplotlib
 import matplotlib.pyplot as plt
@@ -32,7 +33,7 @@ def getFont(font, size):
 	if font not in MPL_FONTS:
 		MPL_FONTS[font] = {}
 	if size not in MPL_FONTS[font]:
-		MPL_FONTS[font][size] = FontManager.FontProperties(fname=os.path.join("C:\\\\", "Users", "buck", "src", "dcr", "params", "fonts", "%s.ttf" % font), size=size)
+		MPL_FONTS[font][size] = FontManager.FontProperties(fname=os.path.join(PACKAGEDIR, "fonts", "%s.ttf" % font), size=size)
 	return MPL_FONTS[font][size]
 
 def wrapTex(tex):
