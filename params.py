@@ -10,6 +10,8 @@ import imageio
 from pydcrdata import DcrDataClient
 from PIL import Image, ImageFilter
 
+import csv
+
 APPDIR = os.path.join(PACKAGEDIR, "data")
 # NiceHash price for Decred 0.0751/PH/day
 NICEHASH_RATE = 0.0751/1e12
@@ -207,12 +209,14 @@ def fetchCMCPrice():
 def avgPrice(pt):
 		return (pt["open"] + pt["close"] + pt["high"] + pt["low"])/4
 
-def getCurrentParameters():
+def getCurrentParameters(asObject=False):
 	params = {}
 	params["xcRate"] = fetchCMCPrice()
 	params["blockHeight"] = int(dataClient.block.best.height())
 	params["roi"] = getDcrDataProfitability(params["xcRate"])
 	params["apy"] = getDcrDataAPY()
+	if asObject:
+		return Generic_class(params)
 	return params
 
 def fetchCoinbase(process=True):
@@ -1013,6 +1017,66 @@ def plotBlockCreationTime():
 
 	plt.show()
 
+def plotTransactions(startHeight, makePlot=True, makeCsv=False, regularOnly=True):
+	bestBlockHeight = getDbHeight()
+	height = startHeight
+	# 0 = regular, 1 = ticket, 2 = vote, 3 = revocation
+	types = ['Regular', 'Ticket', 'Vote', 'Rev']
+	color = lambda i=iter(['#00c903', '#c600c0', '#002ccc', '#d60000']): next(i)
+	txTypes = {
+		0 : [],
+		1: [],
+		2: [],
+		3: []
+	}
+	query = "SELECT tx_type, sent, time FROM transactions WHERE is_mainchain=TRUE AND (tx_type > 0 OR block_index > 0) AND block_height >= %i AND block_height < %i"
+	minStamp = INF
+	maxStamp = 0
+	while height <= bestBlockHeight:
+		txs = archivist.getQueryResults(query % (height, height+1000))
+		for txType, sent, dt in txs:
+			stamp = int(dt.timestamp())
+			txTypes[txType].append((stamp, sent/1e8))
+			minStamp = min(stamp, minStamp)
+			maxStamp = max(stamp, maxStamp)
+		height += 1000
+
+	if makePlot:
+		fig = plt.gcf()
+		ax = plt.gca()
+		ax.semilogy()
+		if regularOnly:
+			X, Y = zip(*txTypes[0])
+			ax.scatter(X, Y, c="#555555", s=1, marker=".")
+		else:
+			for idx, pts in txTypes.items():
+				X, Y = zip(*pts)
+				ax.scatter(X, Y, c=color(), s=1, marker=".")
+		stamp = stamp2dayStamp(minStamp)
+		xTicks = []
+		xLabels = []
+		tickSpacing = 5 # days
+		while stamp < maxStamp:
+			xTicks.append(stamp)
+			xLabels.append(time.strftime("%b %d", time.gmtime(stamp)))
+			stamp += 86400*tickSpacing
+		ax.set_xticks(xTicks)
+		ax.set_xticklabels(xLabels)
+		setAxesFont("Roboto-Regular", 12, ax)
+		plt.show()
+
+	if makeCsv:
+		csvPath = os.path.join(APPDIR, "transaction-dump_307000-312893.csv")
+		try:
+			with open(csvPath, 'w', newline='') as f:
+				csvWriter = csv.writer(f)
+				csvWriter.writerow(("timestamp", "DCR"))
+				csvWriter.writerows(txTypes[0]) # only regular for now
+			print("%i transactions dumped to CSV file at %s" % (len(txTypes[0]), csvPath))
+		except:
+			print("Failed to create CSV file at %s" % csvPath)
+
+
 
 
 	
@@ -1146,4 +1210,6 @@ def plotBlockCreationTime():
 # 		closest = d
 # exit(str(best))
 
-plotBlockCreationTime()
+# plotBlockCreationTime()
+
+plotTransactions(307000, makePlot=False, makeCsv=True, regularOnly=True)
