@@ -1,4 +1,5 @@
 from pydecred import helpers
+from pydecred import constants as C
 import matplotlib
 from matplotlib.figure import Figure
 # from matplotlib.patches import Circle, Wedge, Polygon, Ellipse, Rectangle
@@ -8,8 +9,9 @@ from mpl_toolkits.mplot3d import Axes3D # leave this even if the linter complain
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 # import scipy.optimize as optimize
 import os
+import time
 
-MPL_COLOR = '#555555'
+MPL_COLOR = '#333333'
 matplotlib.rcParams['mathtext.fontset'] = 'cm'
 MPL_FONTS = {}
 NO_SUBPLOT_MARGINS = {
@@ -43,10 +45,45 @@ def getFont(font, size):
         MPL_FONTS[font] = {}
     if size not in MPL_FONTS[font]:
         MPL_FONTS[font][size] = FontManager.FontProperties(
-            fname=os.path.join(helpers.PACKAGEDIR, "fonts", "%s.ttf" % font), 
+            fname=os.path.join(C.PACKAGEDIR, "fonts", "%s.ttf" % font), 
             size=size
         )
     return MPL_FONTS[font][size]
+
+
+def getMonthTicks(start, end, increment, offset=0):
+    """
+    Create a set of matplotlib compatible ticks and tick labels
+    for every `increment` month in the range [start, end],
+    beginning at the month of start + `offset` months.
+    """
+    xLabels = []
+    xTicks = []
+    y, m, d = helpers.yearmonthday(start)
+
+    def normalize(y, m):
+        if m > 12:
+            m -= 12
+            y += 1
+        elif m < 0:
+            m += 12
+            y -= 1
+        return y, m
+
+    def nextyearmonth(y, m):
+        m += increment
+        return normalize(y, m)
+    y, m = normalize(y, m+offset)
+    tick = helpers.mktime(y, m)
+    end = end + C.DAY*120  # Make a few extra months worth.
+    while True:
+        xTicks.append(tick)
+        xLabels.append(time.strftime("%b '%y", time.gmtime(tick)))
+        y, m = nextyearmonth(y, m)
+        tick = helpers.mktime(y, m)
+        if tick > end:
+            break
+    return xTicks, xLabels
 
 
 def wrapTex(tex):

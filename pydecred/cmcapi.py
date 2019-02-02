@@ -1,4 +1,5 @@
 from pydecred import helpers
+from pydecred import constants as C
 import os
 import json
 import datetime
@@ -8,36 +9,40 @@ from bs4 import BeautifulSoup
 import urllib.request as urlrequest
 
 
-def getUriAsJson(uri):
-    req = urlrequest.Request(uri, headers=helpers.HEADERS, method="GET")
-    return json.loads(urlrequest.urlopen(req).read().decode())
-
-
 class CMCClient:
+    """
+    CMCClient is a class for retreiving data from coinmarketcap.
+    """
     def __init__(self, dataDir):
         self.dataDir = dataDir
         helpers.mkdir(dataDir)
         self.historyTemplate = "https://coinmarketcap.com/currencies/%s/historical-data/?start=%s&end=%s"
         self.tickerTemplate = "https://api.coinmarketcap.com/v1/ticker/%s/"
-        self.maxCacheAge = helpers.A_DAY / 12
-        self.settingsPath = os.path.join(dataDir, "settings.json")
-        self.tempSettingsPath = os.path.join(dataDir, "settings.tmp.json")
-        self.settings = helpers.fetchSettingsFile(self.settingsPath)
+        self.maxCacheAge = C.DAY / 12
+        self.settingsFilename = "settings.json"
+        self.settings = helpers.fetchSettingsFile(self.settingsPath())
         if "price.cache" not in self.settings:
             self.settings["price.cache"] = []
         self.cache = self.settings["price.cache"]
+        
+    def settingsPath(self):
+        return os.path.join(self.dataDir, self.settingsFilename)
 
     def saveSettings(self):
-        with open(self.tempSettingsPath, 'w') as f:
-            f.write(json.dumps(self.settings))
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(self.tempSettingsPath, self.settingsPath)
+        """
+        Saves the settings file.
+        """
+        helpers.saveFile(self.dataDir,  self.settingsFilename, json.dumps(self.settings))
 
     def historyPath(self, token):
         return os.path.join(self.dataDir, "%s.json" % token)
 
     def fetchPrice(self, token):
+        """
+        Fetch the price from the API. The API has strict limits on 
+        requests, so a cache is implemented to prevent spamming the 
+        server.
+        """
         i = 0
         cache = self.cache
         cacheLen = len(self.cache)
@@ -59,13 +64,16 @@ class CMCClient:
         if data:
             print("CMClient: returning cached data for %s" % token)
             return data
-        data = getUriAsJson(self.tickerTemplate % token)
+        data = helpers.getUriAsJson(self.tickerTemplate % token)
         cache.insert(0, (token, stamp, data))
         self.saveSettings()
         print("CMClient: returning new data for %s" % token)
         return data
 
     def loadHistory(self, token, keys=None):
+        """
+        Load the history from the  file saved with saveHistory.
+        """
         filepath = self.historyPath(token)
         if not os.path.isfile(filepath):
             return []
@@ -83,15 +91,11 @@ class CMCClient:
         return []
 
     def saveHistory(self, token, history):
-        # see https://stackoverflow.com/a/2333979
-        filename = self.historyPath(token)
-        tmpName = "%s.tmp" % token
-        with open(tmpName, "w") as f:
-            f.write(json.dumps(history))
-            f.flush()
-            os.fsync(f.fileno())
-            f.close()
-        os.replace(tmpName, filename)
+        """
+        Save the daily history.
+        """
+        filename = "%s.json" % token
+        helpers.saveFile(self.dataDir, filename, json.dumps(history))
 
     def fetchHistory(self, token):
         """ Fetches historical data for a currency, and returns it as a list of data points"""

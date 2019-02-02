@@ -1,30 +1,24 @@
-from pydecred import mainnet
-from pydecred import helpers
+from pydecred import mainnet, helpers, calc
+from pydecred import constants as C
 import pydecred.mplstuff as mpl
 from pydecred.cmcapi import CMCClient
 from pydecred.dcrdata import DcrDataClient, PostgreArchivist
 import os
 import json
 import time
-# from PIL import Image, ImageFilter
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.optimize as optimize
-
 import csv
 
 APPDIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 # NiceHash price for Decred 0.0751/PH/day
 NICEHASH_RATE = 0.0751/1e12
-STEADY_STATE_ROI = 0
-STEADY_STATE_APY = 0.15
 helpers.mkdir(APPDIR)
-archivist = PostgreArchivist("dcrdata", "localhost", "dcrdatauser", "dcrpass8675309", logger=helpers.logger)
+archivist = PostgreArchivist("dcrdata", "localhost", "dcrdatauser", "dcrpass8675309")
 DCRDATA_URI = "http://localhost:7777/"
 dataClient = DcrDataClient(DCRDATA_URI)
 
-CMC_TOKEN = "decred"
 cmcDir = os.path.join(APPDIR, "cmc")
 helpers.mkdir(cmcDir)
 cmcClient = CMCClient(cmcDir)
@@ -39,13 +33,6 @@ DeviceRanges = {
             "hashrate": 2.1e12,
             "power": 900,
         },
-        # "mid" : {
-        #   "model" : "Obelisk",
-        #   "price" : 1999,
-        #   "release" : "2018-04-18",
-        #   "hashrate" : 1.2e12,
-        #   "power": 500,
-        # },
         "low": {
             "model": "Baikal Giant B",
             "price": 399,
@@ -76,7 +63,7 @@ DeviceRanges = {
 
 # State-of-the-art devices for a range of algorithms.
 DeviceParams = {
-    "Blake256r14": helpers.recursiveUpdate({"example": "DCR"}, helpers.MODEL_DEVICE),
+    "Blake256r14": helpers.recursiveUpdate({"example": "DCR"}, C.MODEL_DEVICE),
     "Equihash <200,9>": {
         "model": "Bitmain Z9",
         "hashrate": 41e3,
@@ -122,6 +109,15 @@ DeviceParams = {
 [helpers.makeDevice(d) for d in DeviceParams.values()]
 
 
+archivist = None
+
+
+def getPGArchivist():
+    global archivist
+    if not archivist:
+        archivist = PostgreArchivist("dcrdata", "localhost", "dcrdatauser", "dcrpass8675309")
+
+
 def getDbHeight():
     """
     Grab the best block height from a DCRData DB.
@@ -135,7 +131,7 @@ def getDcrDataHashrate(height=None):
     """
     height = height if height else int(dataClient.block.best.height())
     block = dataClient.block.verbose(height)
-    oldBlock = dataClient.block.verbose(int(height - helpers.A_DAY/mainnet.BLOCKTIME))
+    oldBlock = dataClient.block.verbose(int(height - C.DAY/mainnet.TargetTimePerBlock))
     return (int(block["chainwork"], 16) - int(oldBlock["chainwork"], 16))/(block["time"] - oldBlock["time"])
 
 
@@ -143,12 +139,12 @@ def getDcrDataProfitability(xcRate, height=None):
     """
     Get current mining profitability from DCRData.
     """
-    device = helpers.MODEL_DEVICE
+    device = C.MODEL_DEVICE
     height = height if height else int(dataClient.block.best.height())
     nethash = getDcrDataHashrate(height)
-    gross = device["hashrate"]/nethash*helpers.dailyPowRewards(height)*xcRate
-    power = device["power"]*24/1000*helpers.PRIME_POWER_RATE
-    return (device["hashrate"]/nethash*helpers.dailyPowRewards(height)*xcRate - device["power"]*24/1000*helpers.PRIME_POWER_RATE)/device["price"]
+    gross = device["hashrate"]/nethash*calc.dailyPowRewards(height)*xcRate
+    power = device["power"]*24/1000*C.PRIME_POWER_RATE
+    return (device["hashrate"]/nethash*calc.dailyPowRewards(height)*xcRate - device["power"]*24/1000*C.PRIME_POWER_RATE)/device["price"]
 
 
 def getDcrDataAPY():
@@ -164,41 +160,6 @@ def getDcrDataAPY():
             principal += vin[1]["amountin"]
     power = 365/28
     return (juice/principal + 1)**power - 1
-
-
-def getMonthTicks(start, end, increment, offset=0):
-    """
-    Create a set of matplotlib compatible ticks and tick labels
-    for every `increment` month in the range [start, end],
-    beginning at the month of start + `offset` months.
-    """
-    xLabels = []
-    xTicks = []
-    y, m, d = helpers.yearmonthday(start)
-
-    def normalize(y, m):
-        if m > 12:
-            m -= 12
-            y += 1
-        elif m < 0:
-            m += 12
-            y -= 1
-        return y, m
-
-    def nextyearmonth(y, m):
-        m += increment
-        return normalize(y, m)
-    y, m = normalize(y, m+offset)
-    tick = helpers.mktime(y, m)
-    end = end + helpers.A_DAY*120  # Make a few extra months worth.
-    while True:
-        xTicks.append(tick)
-        xLabels.append(time.strftime("%b '%y", time.gmtime(tick)))
-        y, m = nextyearmonth(y, m)
-        tick = helpers.mktime(y, m)
-        if tick > end:
-            break
-    return xTicks, xLabels
 
 
 def getDevices():
@@ -217,14 +178,14 @@ def fetchCMCHistory():
     """
     Updates the coinmarketcap history file.
     """
-    cmcClient.fetchHistory(CMC_TOKEN)
+    cmcClient.fetchHistory(C.CMC_TOKEN)
 
 
 def fetchCMCPrice():
     """
     Grabs the current DCR-USD exchange rate from coinmarketcap.
     """
-    return float(cmcClient.fetchPrice(CMC_TOKEN)[0]["price_usd"])
+    return float(cmcClient.fetchPrice(C.CMC_TOKEN)[0]["price_usd"])
 
 
 def avgPrice(pt):
@@ -251,7 +212,7 @@ def getCurrentParameters(asObject=False):
 def fetchCoinbase(process=True):
     """
     Fetches the actual coinbase transactions for all blocks except 1 and 2.
-    For network averaging. Stores results to intermediate file for use by 
+    For network averaging. Stores results to intermediate file for use by
     other plotting functions.
     """
     dcrFactor = 1e-8
@@ -267,7 +228,6 @@ def fetchCoinbase(process=True):
             newRow = list(newRow)
             newRows[i] = newRow
             newRow[1] = helpers.dt2stamp(newRow[1])
-            val = newRow[2]
             newRow[2] = newRow[2]*dcrFactor
         blocks.extend(newRows)
         offset += 10000
@@ -289,13 +249,13 @@ def processDailyOut(blocks=None):
             blocks = json.loads(f.read())
     # height, time, value
     firstDayStamp = helpers.stamp2dayStamp(blocks[0][1])
-    nextDayStamp = firstDayStamp + helpers.A_DAY
+    nextDayStamp = firstDayStamp + C.DAY
     dayOut = 0
     days = []
     for height, stamp, out in blocks:
         if stamp >= nextDayStamp:
-            days.append((helpers.stamp2dayStamp(stamp-helpers.A_DAY), dayOut))
-            nextDayStamp = nextDayStamp + helpers.A_DAY
+            days.append((helpers.stamp2dayStamp(stamp-C.DAY), dayOut))
+            nextDayStamp = nextDayStamp + C.DAY
             dayOut = 0
         dayOut += out
     filepath = os.path.join(APPDIR, "daily-out.json")
@@ -322,7 +282,7 @@ def storeDailyChainwork():
     rows = archivist.getQueryResults(query)
     firstRow = rows[0]
     firstDayStamp = helpers.stamp2dayStamp(helpers.dt2stamp(firstRow[1]))
-    nextDayStamp = firstDayStamp + helpers.A_DAY
+    nextDayStamp = firstDayStamp + C.DAY
     lastDayBlock = False
     lastBlock = False
     print("Sorting chainwork")
@@ -335,9 +295,9 @@ def storeDailyChainwork():
         lastStamp, lastHeight, lastWork = lastBlock
         if lastDayBlock:
             lastDayStamp, lastDayHeight, lastDayWork = lastDayBlock
-            work = (lastWork - lastDayWork)*helpers.A_DAY/(lastStamp - lastDayStamp)
+            work = (lastWork - lastDayWork)*C.DAY/(lastStamp - lastDayStamp)
             chainworks.append((helpers.stamp2dayStamp(stamp), (lastHeight + lastDayHeight) / 2,  work))
-        nextDayStamp = nextDayStamp + helpers.A_DAY
+        nextDayStamp = nextDayStamp + C.DAY
         lastDayBlock = (stamp, height, chainwork)
     filepath = os.path.join(APPDIR, "daily-chainwork.json")
     with open(filepath, "w") as f:
@@ -355,12 +315,13 @@ def getChainwork():
 
 def compileDailyStats():
     """
-    Matches exchange rates, hashrates, and daily payouts.
+    Daily tuples of (total work, miner rewards, exchange rate).
+    This is everything needed to calculate profitability.
     """
     chainworks = getChainwork()
     tChain = chainworks[0][0]
     # available keys "date.string","open","high","low","close","volume","market.cap"
-    cmcDaily = cmcClient.loadHistory(CMC_TOKEN, keys=["open", "close", "volume", "market.cap"])
+    cmcDaily = cmcClient.loadHistory(C.CMC_TOKEN, keys=["open", "close", "volume", "market.cap"])
     tCmc = cmcDaily[0][0]
     dailyOut = getDailyOut()
     tOut = dailyOut[0][0]
@@ -382,20 +343,15 @@ def compileDailyStats():
     return days
 
 
-def postProcessDevices(devices):
-    for dvc in devices:
-        helpers.makeDevice(dvc)
-        dvc["x"] = []
-        dvc["y"] = []
-        dvc["release"] = helpers.mktime(*[int(x) for x in dvc["release"].split("-")])
-
-
 def plotDevices(processor):
     """
     Plots data for the DeviceRanges. The values plotted depend on the processor
     argument. See `profitProcessor` and `RetailCapitalProcessor`.
     """
-    postProcessDevices(getDevices())
+    for dvc in getDevices():
+        helpers.makeDevice(dvc)
+        dvc["x"] = []
+        dvc["y"] = []
     fig = plt.gcf()
     plt.subplots_adjust(0.25, 0.1, 0.9, 0.9, 0, 0.1)
     stats = compileDailyStats()
@@ -500,7 +456,7 @@ def plotDevices(processor):
     tick = helpers.mktime(y,m)
     increment = 2
     # increment = 4
-    end = fullMax + helpers.A_DAY*120
+    end = fullMax + C.DAY*120
     while True:
         xTicks.append(tick)
         xLabels.append(time.strftime("%b-%y", time.gmtime(tick)))
@@ -516,7 +472,7 @@ def plotDevices(processor):
 
     for ax in (gpuAx, priceAx):
         [label.set_visible(False) for label in ax.get_xticklabels()]
-    prices = [(pt["timestamp"], avgPrice(pt)) for pt in cmcClient.loadHistory(CMC_TOKEN) if fullMin <= pt["timestamp"] <= fullMax]
+    prices = [(pt["timestamp"], avgPrice(pt)) for pt in cmcClient.loadHistory(C.CMC_TOKEN) if fullMin <= pt["timestamp"] <= fullMax]
     x, y = zip(*prices)
     priceAx.plot(x, y, color="black")
     plt.show()
@@ -529,11 +485,11 @@ def profitProcessor(dvc, stat):
     stamp, chainwork, out, price = stat
     if stamp < dvc["release"]:
         return False
-    nethash = chainwork / helpers.A_DAY
+    nethash = chainwork / C.DAY
     xy = stamp, (out*price*dvc["hashrate"]/nethash - dvc["daily.power.cost"])/dvc["price"]
     # if dvc["type"] == "asic" and dvc["level"] == "high":
     #   print(repr(nethash/1e15))
-    #   print(repr(yearmonthday(stamp)))
+    #   print(repr(helpers.yearmonthday(stamp)))
     return xy
 
 
@@ -544,155 +500,14 @@ def retailCapitalProcessor(dvc, stat):
     stamp, chainwork, out, price = stat
     if stamp < dvc["release"]:
         return False
-    return stamp, chainwork/helpers.A_DAY/dvc["hashrate"]*dvc["price"]
-
-
-def plotHashPortion():
-    """
-    ticket fraction vs. work fraction for different N.
-    """
-    fig = plt.gcf()
-    ax = plt.gca()
-    plt.subplots_adjust(0.25, 0.25, 0.90, 0.85, 0, 0.1)
-    for N in range(0, 9):
-        n = 2*N + 1
-        ax.plot(range(1, 101), [helpers.hashportion(x/100, n) for x in range(1, 101)], label=str(n))
-    plt.legend()
-    plt.show()
-
-
-def parametrizeProfitability(deviceType="gpu"):
-    """
-    A (so far) failed attempt at modeling network behavior on exchange rate.
-    """
-    # endStamp = mktime(2018, 12, 25)
-    postProcessDevices(getDevices())
-    lowGpu = DeviceRanges["gpu"]["low"]
-    highGpu = DeviceRanges["gpu"]["high"]
-    lowAsic = DeviceRanges["asic"]["low"]
-    highAsic = DeviceRanges["asic"]["high"]
-
-    if deviceType == "gpu":
-        endStamp = lowAsic["release"]
-        device = highGpu
-    else:
-        endStamp = time.time()
-        device = highAsic
-
-    startStamp = device["release"]
-    powerCost = device["daily.power.cost"]
-    deviceCost = device["price"]
-    deviceHashrate = device["hashrate"]
-
-    def profitability(height, xcRate, nethash):
-        return (deviceHashrate/nethash*helpers.dailyPowRewards(height)*xcRate - powerCost) / deviceCost
-
-    hashrates = [(stamp, height, work/helpers.A_DAY) for stamp, height, work in getChainwork() if startStamp < stamp < endStamp]
-    prices = [(pt["timestamp"], avgPrice(pt)) for pt in cmcClient.loadHistory(CMC_TOKEN) if startStamp < pt["timestamp"] < endStamp]
-    if len(prices) != len(hashrates):
-        print("price-hashrate length mismatch, %i != %i" % (len(prices), len(hashrates)))
-        return
-
-    # calculate profitability per day.
-    alphas = []
-    stampedAlphas = []
-    deltas = []
-    nethashes = []
-    priceDeltas = []
-    lastAlpha = None
-    lastPrice = None
-    fitData = []
-    simData = []
-    for (stamp, height, nethash),  (_, price) in zip(hashrates, prices):
-        alpha = profitability(height, price, nethash)
-        stampedAlphas.append((stamp, alpha))
-        if lastAlpha:
-            deltas.append(alpha - lastAlpha)
-            pDelta = price - lastPrice
-            priceDeltas.append(pDelta)
-            alphas.append(lastAlpha)
-            nethashes.append(nethash)
-            simData.append((stamp, nethash, price, pDelta))
-            fitData.append((alpha, price, pDelta))
-
-        lastAlpha = alpha
-        lastPrice = price
-
-    def fitDeltaAlpha(x, decay, response):
-        y = []
-        for a, p, dp in x:
-            b1 = -1*decay*a # scaling factor helps scipy converge
-            b2 = response*dp/p
-            # print("a: %f, dp: %f\nb1: %f, b2: %f\n-----------------------------" % (a, dp, b1, b2))
-            y.append(b1 + b2)
-        return y
-
-    halfDay = helpers.A_DAY / 2
-    times = [t + halfDay for t, p in prices[:-1]]
-    (decay, response), p_conv = optimize.curve_fit(fitDeltaAlpha, fitData, deltas)
-    print("decay: %f" % decay)
-    print("response: %f" % response)
-
-    def calcDeltaAlpha(a, p, dp):
-        return -1*decay*a + response*dp/p
-
-    alphaMin = min(alphas)
-    alphaMax = max(alphas)
-    alphaDelta = alphaMax - alphaMin
-    deltaMin =  min(priceDeltas)
-    deltaMax = max(priceDeltas)
-    deltaDelta = deltaMax - deltaMin
-
-    # fig = plt.gcf()
-    # fitAxes = fig.add_subplot("111", projection="3d")
-
-    # # X = np.array([alphaMin, alphaMax])
-    # # Y = np.array([deltaMin, deltaMax])
-    # X = np.arange(alphaMin, alphaMax, alphaDelta/25)
-    # Y = np.arange(deltaMin, deltaMax, deltaDelta/25)
-
-    # a, p = np.meshgrid(X, Y)
-    # alphaFit = np.array([calcDeltaAlpha(x, y) for x, y in zip(np.ravel(a), np.ravel(p))]).reshape(a.shape)
-    # fitAxes.plot_surface(a, p, alphaFit)
-
-    # fitAxes.scatter(alphas, priceDeltas, deltas)
-    # plt.show()
-
-    fig = plt.figure()
-    xp, yp = zip(*prices)
-    pAxes = fig.add_subplot("311")
-    pAxes.plot(xp, yp)
-
-    xa, ya = zip(*stampedAlphas)
-    aAxes = fig.add_subplot("312")
-    aAxes.plot(xa, ya)
-
-    startAlpha = lastAlpha = stampedAlphas[0][1]
-    prediction = [startAlpha]
-    lastPrice = prices[0][1]
-    # hrTracker = nethashes[0]
-    # lastPrice = prices[0][1]
-
-    for t, hr, xcRate, dp in simData:
-        lastAlpha += calcDeltaAlpha(lastAlpha, xcRate, dp)
-        # lastHr += Hnet(t+A_DAY, lastPrice + dp, lastAlpha + da) - Hnet(t, lastPrice, lastAlpha)
-        # lastPrice += dp
-        # lastAlpha += da   
-        # hrTracker = networkHashrate(device, xcRate, lastAlpha, height=timeToHeight(t))
-        # print(hrTracker/hr)
-        prediction.append(lastAlpha)
-
-    fitAx = fig.add_subplot("313")
-    fitAx.plot([a[0] for a in stampedAlphas], prediction)
-    plt.figure(fig.number)
-    plt.show()
+    return stamp, chainwork/C.DAY/dvc["hashrate"]*dvc["price"]
 
 
 def plotSigma(Ns=None):
     """
     Sigma vx. y (work fraction vs. ticket fraction)
     """
-    Ns = Ns if Ns else [mainnet.TICKETS_PER_BLOCK]
+    Ns = Ns if Ns else [mainnet.TicketsPerBlock]
     plt.subplots_adjust(0.25, 0.25, 0.90, 0.85, 0, 0.1)
     fig = plt.gcf()
     ax = plt.gca()
@@ -708,14 +523,14 @@ def plotSigma(Ns=None):
     linestyles = ["--", ":", "-."]
     lsIdx = 0
     for N in Ns:
-        if N == mainnet.TICKETS_PER_BLOCK:
+        if N == mainnet.TicketsPerBlock:
             linestyle = "-"
             linecolor = "#333333"
         else:
             linestyle = linestyles[lsIdx%len(linestyles)]
             lsIdx += 1
             linecolor = "#999999"
-        Y = [helpers.hashportion(x, winners=N) for x in X]
+        Y = [calc.hashportion(x, winners=N) for x in X]
         plt.plot(X, Y, color=linecolor, linestyle=linestyle)
     plt.show()
 
@@ -723,16 +538,16 @@ def plotSigma(Ns=None):
 def plotPrices():
     """
     Plot stake diff and exchange rate.
-    Should probably update CMCHistory with fetchCMCHistory first.
+    Update CMC history file with fetchCMCHistory() first.
     """
-    xcRates = [(pt["timestamp"], avgPrice(pt)) for pt in cmcClient.loadHistory(CMC_TOKEN)]
+    xcRates = [(pt["timestamp"], avgPrice(pt)) for pt in cmcClient.loadHistory(C.CMC_TOKEN)]
     tMin = min(xcRates, key=lambda pt: pt[0])[0]
     tMax = max(xcRates, key=lambda pt: pt[0])[0]
     dataClient = DcrDataClient(DCRDATA_URI)
     ts = dataClient.chart("ticket-price")
     ticketStamps = [dataClient.timeStringToUnix(t) for t in ts["time"]]
     pricesDCR = ts["valuef"]
-    filtered = [(t, v*helpers.interpolate(xcRates, t)) for t, v in zip(ticketStamps, pricesDCR) if tMin < t < tMax]
+    filtered = [(t, v*calc.interpolate(xcRates, t)) for t, v in zip(ticketStamps, pricesDCR) if tMin < t < tMax]
     filteredStamps, pricesFiat = zip(*filtered)
 
     fig = plt.gcf()
@@ -817,7 +632,7 @@ def plotTicketReturns():
     tMin = min(stamps)
     tMax = max(stamps)
     tRange = tMax - tMin
-    xTicks, xLabels = getMonthTicks(tMin, tMax, 4, 3)
+    xTicks, xLabels = mpl.getMonthTicks(tMin, tMax, 4, 3)
     ax.set_xlim(left=tMin, right=tMax)
     ax.set_xticks(xTicks)
     ax.set_xticklabels(xLabels, fontproperties=mpl.getFont("Roboto-Regular", 11))
@@ -839,16 +654,17 @@ def plotTicketReturns():
     ax.plot(stamps, [makeAPY(r)*100 for r in returns], color="#333333", linewidth=1.5)
 
     def minApy(t):
-        circulation = helpers.getCirculatingSupply(t)
-        posReward = helpers.blockReward(helpers.timeToHeight(t))*mainnet.STAKE_SPLIT
-        return (mainnet.TICKETPOOL_SIZE*posReward/circulation/mainnet.TICKETS_PER_BLOCK + 1)**(365/28) - 1
+        circulation = calc.getCirculatingSupply(t)
+        posReward = calc.blockReward(calc.timeToHeight(t))*mainnet.STAKE_SPLIT
+        return (mainnet.TicketExpiry*posReward/circulation/mainnet.TicketsPerBlock + 1)**(365/28) - 1
 
     ax.plot(stamps, [minApy(t)*100 for t in stamps], color="#555555", linestyle=":")
 
     plt.show()
 
 
-def plotContour(processor, var1, var2, divisor=None, fmt="%i", lvlCount=15, contourType="contourf", **kwargs):
+def plotContour(processor, var1, var2, divisor=None, fmt="%i", lvlCount=15, 
+                contourType="contourf", xLims=None, yLims=None, **kwargs):
     """
     plotContour can create a contour plot of cost of attack variation along any
     two attackCost parameters. Also surface plots and filled contours.
@@ -874,8 +690,10 @@ def plotContour(processor, var1, var2, divisor=None, fmt="%i", lvlCount=15, cont
         ax.plot_surface(X, Y, Z, cmap='plasma_r')
     else:
         raise Exception("plotContour: Unknown contourType: %s" % contourType)
-    ax.set_xlim(left=0, right=0.9)
-    ax.set_ylim(bottom=0, top=1)
+    if xLims:
+        ax.set_xlim(**xLims)
+    if yLims:
+        ax.set_ylim(**yLims)
     mpl.setAxesFont("Roboto-Regular", 12, ax)
     plt.show()
 
@@ -901,7 +719,7 @@ def plotLine(variable, divisor=1, **kwargs):
     Ys = []
     for x in X:
         params[k] = x
-        A = helpers.AttackCost(**params)
+        A = calc.attackCost(**params)
         Ytotal.append(A.attackCost)
         Yrental.append(A.retailTerm)
         Yretail.append(A.rentalTerm)
@@ -932,7 +750,7 @@ def plotSupplyReturn():
     for stakeShare in [0.10, 0.20, 0.3, 0.4]:
         Y = []
         for apy in X:
-            locked = helpers.calcTicketPrice(apy, height, stakeSplit=stakeShare)*mainnet.TICKETPOOL_SIZE/1e6
+            locked = calc.ReverseEquations.calcTicketPrice(apy, height, stakeSplit=stakeShare)*mainnet.TicketExpiry/1e6
             Y.append(locked)
         plt.plot([x*100 for x in X], Y, linestyle=next(linestyle), color=next(color), label="%i%%" % (stakeShare*100,))
     supply = dataClient.supply()["supply_mined"]/1e8/1e6 # 1e8 converts from atoms. 1e9 to millions.
@@ -941,7 +759,7 @@ def plotSupplyReturn():
     mpl.setAxesFont("Roboto-Regular", 12, ax)
     # plt.legend()
     for supplyTime in (helpers.mktime(2019), helpers.mktime(2025), helpers.mktime(2040)):
-        supply = helpers.getCirculatingSupply(supplyTime)/1e6
+        supply = calc.getCirculatingSupply(supplyTime)/1e6
         plt.plot([0, 100],[supply, supply], linestyle=":", color="#999999")
     plt.show()
 
@@ -969,13 +787,14 @@ def calcAlgos():
         Y = []
         for alpha in X:
             params["roi"] = alpha
-            Y.append(helpers.AttackCost(ticketFraction=1e-9, device=device, **params).attackCost)
+            Y.append(calc.attackCost(ticketFraction=1e-9, device=device, **params).attackCost)
         ax.plot([x*100. for x in X], [y/1e6 for y in Y], label=algo, linestyle=next(linestyle), color=next(color), zorder=2)
     ax.plot([0, 0], [-1000, 1000], color="#cccccc", linewidth=1, zorder=1)
     ax.set_ylim(bottom=0, top=129)
     mpl.setAxesFont("Roboto-Regular", 12, ax)
     plt.legend()
     plt.show()
+
 
 def plotBlockCreationTime():
     """
@@ -991,9 +810,9 @@ def plotBlockCreationTime():
     Y = []
     Y2 = []
     for stakeOwnership in X:
-        fullPower = 1/helpers.concensusProbability(stakeOwnership)*mainnet.BLOCKTIME/helpers.AN_HOUR
+        fullPower = 1/calc.concensusProbability(stakeOwnership)*mainnet.TargetTimePerBlock/C.HOUR
         Y.append(fullPower)
-        Y2.append(fullPower/helpers.hashportion(stakeOwnership))
+        Y2.append(fullPower/calc.hashportion(stakeOwnership))
 
     yTicks = [5/60., 1, 24, 24*30, 24*365]
     yLabels = ["$ t_b $", "hour", "day", "month", "year"]
@@ -1006,9 +825,8 @@ def plotBlockCreationTime():
     left, right = 0, 1.
     ax.set_xlim(left=left, right=right)
 
-    ticketPrice = dataClient.stake.diff()["current"]
-    xcFactor = fetchCMCPrice()*mainnet.TICKETPOOL_SIZE*ticketPrice/1e6
-
+    # ticketPrice = dataClient.stake.diff()["current"]
+    # xcFactor = fetchCMCPrice()*mainnet.TicketExpiry*ticketPrice/1e6
     # ax2 = ax.twiny()
     # ax2.set_xlim(left=left/xcFactor, right=right/xcFactor)
     # setAxesFont("Roboto-Regular", 12, ax2)
@@ -1039,7 +857,7 @@ def plotTransactions(startHeight, makePlot=True, makeCsv=False, regularOnly=True
         3: []
     }
     query = "SELECT tx_type, sent, time FROM transactions WHERE is_mainchain=TRUE AND (tx_type > 0 OR block_index > 0) AND block_height >= %i AND block_height < %i"
-    minStamp = helpers.INF
+    minStamp = C.INF
     maxStamp = 0
     while height <= bestBlockHeight:
         txs = archivist.getQueryResults(query % (height, height+1000))
@@ -1085,43 +903,47 @@ def plotTransactions(startHeight, makePlot=True, makeCsv=False, regularOnly=True
         except Exception:
             print("Failed to create CSV file at %s" % csvPath)
 
-
 # fetchCoinbase()
-# fetchCMCHistory()
-# processDailyOut()
 # storeDailyChainwork()
+
 # plotDevices(profitProcessor)
+
 # plotDevices(retailCapitalProcessor)
-# plotHashPortion()
-# plotAttackCost(False)
+
 # parametrizeProfitability()
+
 # plotSigma()
+
 # plotPrices()
+
 # calculateTicketReturns()
 # plotTicketReturns()
-# plotShareRatios()
-# plotRentabilityVsRewardShare(useRatio=True)
-# plotRentability(0.5)
+
 # plotSupplyReturn()
+
 # calcAlgos()
+
 # plotLine(
 #   {"ticketFraction": np.linspace(0.001, 0.999, 100)},
 #   # rentability = 200e12,
-#   # attackDuration = A_DAY,
+#   # attackDuration = CDAY,
 #   rentalRate = NICEHASH_RATE,
 #   divisor = 1e6
 # )
-# plotContour(
-#   helpers.AttackCost,
-#   ("stakeSplit", np.linspace(1e-9, 0.9, 250)),
-#   ("ticketFraction", np.linspace(1e-9, 1, 250)),
-#   fmt = lambda v: "%i M" % int(v),
-#   lvlCount = 20,
-#   contourType = "contourf",
-#   divisor = 1e6,
-#   rentalRate = NICEHASH_RATE,
-#   # rentalRatio = 0.2,
-#   **getCurrentParameters()
-# )
+
+plotContour(
+  calc.attackCost,
+  ("stakeSplit", np.linspace(1e-9, 0.9, 250)),
+  ("ticketFraction", np.linspace(1e-9, 1, 250)),
+  fmt=lambda v: "%i M" % int(v),
+  lvlCount=20,
+  contourType="contourf",
+  divisor=1e6,
+  # rentalRate=NICEHASH_RATE,
+  # rentalRatio = 0.2,
+  **getCurrentParameters()
+)
+
 # plotBlockCreationTime()
+
 # plotTransactions(307000, makePlot=True, makeCsv=True, regularOnly=True)

@@ -11,6 +11,8 @@ import calendar
 import sqlite3
 import psycopg2
 
+from pydecred import helpers
+
 VERSION = "0.0.1"
 HEADERS = {"User-Agent": "PyDcrData/%s" % VERSION}
 
@@ -289,7 +291,7 @@ class Archivist:
 class SQLiteArchivist(Archivist):
     def __init__(self, filepath, logger):
         self.filepath = filepath
-        super(SQLiteArchivist, self).__init__(logger)
+        super(SQLiteArchivist, self).__init__(logger if logger else helpers.ConsoleLogger)
 
     def connect(self):
         try:
@@ -379,18 +381,20 @@ class SQLiteArchivist(Archivist):
 class PostgreArchivist(Archivist):
     timeFmt = "%Y-%m-%d %H:%M:%S"
 
-    def __init__(self, dbname, host, user, password, logger):
+    def __init__(self, dbname, host, user, password, port=5432, logger=None):
         self.dbname = dbname
         self.host = host
         self.user = user
         self.password = password
-        super(PostgreArchivist, self).__init__(logger)
+        self.port = port
+        super(PostgreArchivist, self).__init__(logger if logger else helpers.ConsoleLogger)
 
     def connect(self):
         try:
-            self.conn = psycopg2.connect("dbname='%s' user='%s' host='%s' password='%s'" % (self.dbname, self.user, self.host, self.password))
+            self.conn = psycopg2.connect(dbname=self.dbname, user=self.user, host=self.host, password=self.password, port=self.port)
         except Exception as e:
             raise ArchiveException(*self.errorParams("\\connect", e))
+
     @staticmethod
     def timeStringToUnix(fmtStr):
         return calendar.timegm(time.strptime(fmtStr, PostgreArchivist.timeFmt))

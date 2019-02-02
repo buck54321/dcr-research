@@ -1,9 +1,10 @@
 import os
+import platform
 import sys
 import time
 import calendar
-import math
 import json
+from pydecred import constants as C
 # import traceback
 import urllib.request as urlrequest
 
@@ -11,25 +12,6 @@ import urllib.request as urlrequest
 import logging
 from logging.handlers import RotatingFileHandler
 logger = logging.getLogger("pydecred")
-
-# A few globals
-INF = float("inf")
-VERBOSITY = 1 # 0->low, 1->normal, 2->high
-PACKAGEDIR = os.path.dirname(os.path.realpath(__file__))
-HEADERS = {'Content-Type': 'application/json'}
-A_DAY = 86400
-AN_HOUR = 3600
-PRIME_POWER_RATE = 0.05
-SYMBOL = "DCR"
-
-BLOCKTIME = 300
-TICKETPOOL_SIZE = 40960
-TICKETS_PER_BLOCK = 5
-GENESIS_STAMP = 1454954400
-REWARD_WINDOW_SIZE = 6144
-STAKE_SPLIT = 0.3
-POW_SPLIT = 0.6
-TREASURY_SPLIT = 0.1
 
 
 def mkdir(path):
@@ -54,7 +36,7 @@ def yearmonthday(t):
 
 def mktime(year, month=None, day=None):
     """
-    Take make a timestamp from year, month, day. See `yearmonthday`.
+    Make a timestamp from year, month, day. See `yearmonthday`.
     """
     if month:
         if day:
@@ -77,15 +59,6 @@ def stamp2dayStamp(stamp):
 def ymdString(stamp):
     """ YY-MM-DD """
     return ".".join([str(x).zfill(2) for x in yearmonthday(stamp)])
-
-
-MODEL_DEVICE = {
-    "model": "INNOSILICON D9 Miner",
-    "price": 1699,
-    "release":  mktime(2018, 4, 18),
-    "hashrate": 2.1e12,
-    "power": 900
-}
 
 
 def clamp(val, minVal, maxVal):
@@ -226,17 +199,34 @@ def prepareLogger(filepath, printLvl=logging.INFO, logLevel=logging.DEBUG):
         logger.addHandler(printHandler)
 
 
+class ConsoleLogger:
+    """
+    A logger that only prints
+    """
+
+    @staticmethod
+    def log(s):
+        print(s)
+
+    debug = log
+    info = log
+    warning = log
+    error = log
+    critical = log
+
+
 def makeDevice(device):
     """
     Set some commonly used parameters.
     Modifies in-place. Device returned as convenience.
     """
-    device["daily.power.cost"] = PRIME_POWER_RATE*device["power"]/1000*24
+    device["daily.power.cost"] = C.PRIME_POWER_RATE*device["power"]/1000*24
     device["min.profitability"] = -1*device["daily.power.cost"]/device["price"]
     device["power.efficiency"] = device["hashrate"]/device["power"]
     device["relative.price"] = device["price"]/device["hashrate"]
+    if "release" in device and isinstance(device["release"], str):
+        device["release"] = mktime(*[int(x) for x in device["release"].split("-")])
     return device
-makeDevice(MODEL_DEVICE)
 
 
 def fetchSettingsFile(filepath):
@@ -256,238 +246,36 @@ def fetchSettingsFile(filepath):
     return False
 
 
-def interpolate(pts, x):
+def saveFile(directory, name, contents):
     """
-    Linearly interpret between points to get an estimate.
-    pts should be of the form ((x1,y1), (x2,y2), ..) of increasing x.
+    Atomic file save.
     """
-    lastPt = pts[0]
-    for pt in pts[1:]:
-        t, v = pt
-        lt, lv = lastPt
-        if t >= x:
-            return lv + (x - lt)/(t - lt)*(v - lv)
-        lastPt = pt
+    filepath = os.path.join(directory, name)
+    tmpPath = filepath + ".tmp"
+    with open(tmpPath, 'w') as f:
+        f.write(contents)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmpPath, filepath)
 
-
-def derivative(pts, x):
-    """
-    Linearly interpret between points to get an estimate of the derivative (δy/δx).
-    pts should be of the form ((x1,y1), (x2,y2), ..) of increasing x.
-    """
-
-    lastPt = pts[0]
-    for pt in pts[1:]:
-        t, v = pt
-        if t >= x:
-            lt, lv = lastPt
-            return (v - lv)/(t - lt)
-        lastPt = pt
-
-
-# def hueGenerator():
-#     denominator = 2
-#     numerator = 1
-# # todo: translate from js
-# #    this.generateHue = function(){
-#  #        // Generates colors on the sequence 0, 1/2, 1/4, 3/4, 1/8, 3/8, 5/8, 7/8, 1/16, ...
-#  #        while(self.colorDenominator < 512){ //Should generate a little more than 100 unique values
-#  #            if(self.colorNumerator == 0){
-#  #                self.colorNumerator += 1
-#  #                return 0;
-#  #            }
-#  #            if(self.colorNumerator >= self.colorDenominator){
-#  #                self.colorNumerator = 1; // reset the numerator
-#  #                self.colorDenominator *= 2; // double the denominator
-#  #                continue;
-#  #            }
-#  #            hue = self.colorNumerator/self.colorDenominator*360
-#  #            self.colorNumerator += 2;
-#  #            return hue
-#  #        }
-#  #        self.colorNumerator = 0
-#  #        self.colorDenominator = 2
-#  #        return self.generateHue()
-#  #    }
 
 def getUriAsJson(uri):
-    req = urlrequest.Request(uri, headers=HEADERS, method="GET")
+    """
+    GET request parsed as JSON
+    """
+    req = urlrequest.Request(uri, headers=C.HEADERS, method="GET")
     return json.loads(urlrequest.urlopen(req).read().decode())
 
-
-def getCirculatingSupply(tBlock):
-    """ An approximation based on standard block time of 5 min and timestamp of genesis block """
-    if tBlock < GENESIS_STAMP:
-        return 0
-    premine = 1.68e6
-    if tBlock == GENESIS_STAMP:
-        return premine
-    block2reward = 21.84
-    block4096stamp = mktime(2016, 2, 22)
-    if tBlock < block4096stamp:
-        return premine + (tBlock - GENESIS_STAMP)/BLOCKTIME*block2reward
-    block4096reward = 31.20
-    regularStamp = GENESIS_STAMP+REWARD_WINDOW_SIZE*BLOCKTIME
-    if tBlock < regularStamp:
-        return premine + (tBlock - GENESIS_STAMP)/BLOCKTIME*block4096reward
-    tRemain = tBlock - regularStamp
-    blockCount = tRemain/BLOCKTIME
-    periods = blockCount/float(REWARD_WINDOW_SIZE)
-    vSum = 1833321 # supply at start of regular reward period
-    fullPeriods = int(periods)
-    partialPeriod = periods - fullPeriods
-    p = 0
-    for p in range(fullPeriods):
-        reward = blockReward((p+1)*REWARD_WINDOW_SIZE)
-        vSum += reward*REWARD_WINDOW_SIZE
-    p += 1
-    reward = blockReward((p+1)*REWARD_WINDOW_SIZE)
-    vSum += reward*REWARD_WINDOW_SIZE*partialPeriod
-    return vSum
-
-
-def timeToHeight(t):
-        return int((t-GENESIS_STAMP)/BLOCKTIME)
-
-
-def binomial(n, k):
-    f = math.factorial
-    return f(n)/f(k)/f(n-k)
-
-
-def concensusProbability(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
-    halfN = winners/2.
-    k = 0
-    probability = 0
-    while k < halfN:
-        probability += binomial(winners, k)*stakeportion**(winners-k)*((1-stakeportion)*participation)**k
-        k += 1
-    if probability == 0:
-        print("Quitting with parameters %s" % repr((stakeportion, winners, participation)))
-    return probability
-
-
-def hashportion(stakeportion, winners=TICKETS_PER_BLOCK, participation=1):
-    return 1 - concensusProbability(stakeportion, winners)
-
-
-def grossEarnings(device, roi, energyRate=PRIME_POWER_RATE):
-    return roi*device["price"] + 24*device["power"]*energyRate/1000
-
-
-def blockReward(height):
-    # https://docs.decred.org/advanced/inflation/
-    return 31.19582664*(100/101)**int(height/6144)
-
-
-def dailyPowRewards(height, blockTime=BLOCKTIME, powSplit=POW_SPLIT):
-    return A_DAY/blockTime*blockReward(height)*powSplit
-
-
-def dailyPosRewards(height, blockTime=BLOCKTIME, stakeSplit=STAKE_SPLIT):
-    return A_DAY/blockTime*blockReward(height)*stakeSplit
-
-
-def networkDeviceCount(device, xcRate, roi, height=3e5, blockTime=BLOCKTIME, powSplit=POW_SPLIT):
-    return dailyPowRewards(height, blockTime, powSplit)*xcRate/grossEarnings(device, roi)
-
-
-def networkHashrate(device, xcRate, roi, height=3e5, blockTime=BLOCKTIME, powSplit=POW_SPLIT):
-    return networkDeviceCount(device, xcRate, roi, height, blockTime, powSplit)*device["hashrate"]
-
-
-def calcTicketPrice(apy, height, winners=TICKETS_PER_BLOCK, stakeSplit=STAKE_SPLIT):
-    Rpos = stakeSplit*blockReward(height)
-    return Rpos/(winners*((apy + 1)**(25/365.) - 1))
-
-
-class Ay:
-    def __init__(self, retailTerm, rentalTerm, stakeTerm, ticketFraction):
-        self.retailTerm = retailTerm
-        self.rentalTerm = rentalTerm
-        self.stakeTerm = stakeTerm
-        self.workTerm = rentalTerm + retailTerm
-        self.attackCost = retailTerm + rentalTerm + stakeTerm
-        self.ticketFraction = ticketFraction
-
-    def __str__(self):
-        return "<AttackCost: ticketFraction %.3f, workTerm %i, stakeTerm %i, attackCost %i>" % (self.ticketFraction, self.workTerm, self.stakeTerm, self.attackCost)
-
-
-def AttackCost(ticketFraction=None, xcRate=None, blockHeight=None, roi=None, ticketPrice=None, blockTime=BLOCKTIME, powSplit=None, 
-        stakeSplit=None, treasurySplit=TREASURY_SPLIT, rentability=None, nethash=None, winners=TICKETS_PER_BLOCK, participation=1., 
-        poolSize=TICKETPOOL_SIZE, apy=None, attackDuration=AN_HOUR, device=None, rentalRatio=None, rentalRate=None):
-    if any([x is None for x in (ticketFraction, xcRate, blockHeight)]):
-        raise Exception("ticketFraction, xcRate, and blockHeight are required args/kwargs for AttackCost")
-    if treasurySplit is None:
-        raise Exception("AttackCost: treasurySplit cannot be None")
-
-    if stakeSplit:
-        if not powSplit:
-            powSplit = 1 - treasurySplit - stakeSplit
-    else:
-        if powSplit:
-            stakeSplit = 1 - treasurySplit - powSplit
-        else:
-            powSplit = POW_SPLIT
-            stakeSplit = STAKE_SPLIT
-
-    device = device if device else MODEL_DEVICE
-    if nethash is None:
-        if roi is None: # mining ROI could be zero 
-            raise Exception("minimizeY: Either a nethash or an roi must be provided")
-        nethash = networkHashrate(device, xcRate, roi, blockHeight, blockTime, powSplit)
-    if rentability or rentalRatio:
-        if not rentalRate:
-            raise Exception("minimizeY: If rentability is non-zero, rentalRate must be provided")
-    else:
-        rentalRate = 0
-    if ticketPrice is None:
-        if not apy:
-            raise Exception("minimizeY: Either a ticketPrice or an apy must be provided")
-    ticketPrice = calcTicketPrice(apy, blockHeight, winners, stakeSplit)
-    stakeTerm = ticketFraction*poolSize*ticketPrice*xcRate
-    hashPortion = hashportion(ticketFraction, winners, participation)
-    attackHashrate = nethash*hashPortion
-    rent = rentability if rentability is not None else attackHashrate*rentalRatio if rentalRatio is not None else 0
-    rentalPart = min(rent, attackHashrate)
-    retailPart = attackHashrate - rentalPart
-    rentalTerm = rentalPart*rentalRate/86400*attackDuration
-    retailTerm = retailPart*( device["relative.price"] + device["power"]/device["hashrate"]*PRIME_POWER_RATE/1000/3600*attackDuration)
-    return Ay(retailTerm, rentalTerm, stakeTerm, ticketFraction)
-
-
-def purePowAttackCost(xcRate=None, blockHeight=None, roi=None, blockTime=BLOCKTIME, treasurySplit=TREASURY_SPLIT, 
-    rentability=None, nethash=None,attackDuration=AN_HOUR, device=None, rentalRatio=None, rentalRate=None, **kwargs):
-    if any([x is None for x in (xcRate, blockHeight)]):
-        raise Exception("xcRate and blockHeight are required args/kwargs for PurePowAttackCost")
-    device = device if device else MODEL_DEVICE
-    if nethash is None:
-        if roi is None: # mining ROI could be zero 
-            raise Exception("minimizeY: Either a nethash or an roi must be provided")
-        nethash = networkHashrate(device, xcRate, roi, blockHeight, blockTime, 1-treasurySplit)
-    if rentability or rentalRatio:
-        if not rentalRate:
-            raise Exception("minimizeY: If rentability is non-zero, rentalRate must be provided")
-    else:
-        rentalRate = 0
-    attackHashrate = 0.5*nethash
-    rent = rentability if rentability is not None else attackHashrate*rentalRatio if rentalRatio is not None else 0
-    rentalPart = min(rent, attackHashrate)
-    retailPart = attackHashrate - rentalPart
-    rentalTerm = rentalPart*rentalRate/86400*attackDuration
-    retailTerm = retailPart*( device["relative.price"] + device["power"]/device["hashrate"]*PRIME_POWER_RATE/1000/3600*attackDuration)
-    return Ay(retailTerm, rentalTerm, 0, 0)
-
-
-def minimizeAy(*args, grains=100, **kwargs):
-    lowest = INF
-    result = None
-    grainSize = 0.999/grains
-    for i in range(1, grains):
-        poolPortion = grainSize*i
-        A = AttackCost(grainSize*i, *args, **kwargs)
-        if A.attackCost < lowest:
-            lowest = A.attackCost
-            result = A
-    return result
+def appDataDir():
+    appName = "dcrdata"
+    opSys = platform.system()
+    if opSys == "Windows":
+        appDir = os.getenv("LOCALAPPDATA")
+        if not appDir: 
+            appDir = os.getenv("APPDATA")
+        return os.path.join(appDir, appName.capitalize())
+    from pathlib import Path
+    appDir = str(Path.home())
+    if opSys == "Darwin":
+        return os.path.join(appDir, "Library", "Application Support", appName.capitalize())
+    return os.path.join(appDir, "."+appName)
