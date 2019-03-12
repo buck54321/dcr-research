@@ -3,11 +3,10 @@ import os
 # A few usefule constants.
 INF = float("inf")
 PACKAGEDIR = os.path.dirname(os.path.realpath(__file__))
-HEADERS = {'Content-Type': 'application/json'}
 MINUTE = 60
 DAY = 86400
 HOUR = 3600
-PRIME_POWER_RATE = 0.05
+PRIME_POWER_RATE = 0.05  # Per kWh USD
 SYMBOL = "DCR"
 CMC_TOKEN = "decred"
 

@@ -4,12 +4,16 @@ from pydecred import mainnet
 import math
 
 NETWORK = mainnet
-helpers.makeDevice(C.MODEL_DEVICE)
+MODEL_DEVICE = helpers.makeDevice(**C.MODEL_DEVICE)
 
 
 def setNetwork(network):
     global NETWORK
     NETWORK = network
+
+
+def clamp(val, minVal, maxVal):
+    return max(minVal, min(val, maxVal))
 
 
 def interpolate(pts, x):
@@ -159,7 +163,7 @@ class ReverseEquations:
         return ReverseEquations.networkDeviceCount(device, xcRate, roi, height, blockTime, powSplit)*device["hashrate"]
 
     @staticmethod
-    def calcTicketPrice(apy, height, winners=None, stakeSplit=None):
+    def ticketPrice(apy, height, winners=None, stakeSplit=None):
         winners = winners if winners else NETWORK.TicketsPerBlock
         stakeSplit = stakeSplit if stakeSplit else NETWORK.STAKE_SPLIT
         Rpos = stakeSplit*blockReward(height)
@@ -238,7 +242,7 @@ def attackCost(ticketFraction=None, xcRate=None, blockHeight=None, roi=None,
             powSplit = NETWORK.POW_SPLIT
             stakeSplit = NETWORK.STAKE_SPLIT
 
-    device = device if device else C.MODEL_DEVICE
+    device = device if device else MODEL_DEVICE
     if nethash is None:
         if roi is None: # mining ROI could be zero 
             raise Exception("minimizeY: Either a nethash or an roi must be provided")
@@ -251,7 +255,7 @@ def attackCost(ticketFraction=None, xcRate=None, blockHeight=None, roi=None,
     if ticketPrice is None:
         if not apy:
             raise Exception("minimizeY: Either a ticketPrice or an apy must be provided")
-        ticketPrice = ReverseEquations.calcTicketPrice(apy, blockHeight, winners, stakeSplit)
+        ticketPrice = ReverseEquations.ticketPrice(apy, blockHeight, winners, stakeSplit)
     stakeTerm = ticketFraction*poolSize*ticketPrice*xcRate
     hashPortion = hashportion(ticketFraction, winners, participation)
     attackHashrate = nethash*hashPortion
@@ -270,7 +274,7 @@ def purePowAttackCost(xcRate=None, blockHeight=None, roi=None, blockTime=None,
     if any([x is None for x in (xcRate, blockHeight)]):
         raise Exception("xcRate and blockHeight are required args/kwargs for PurePowAttackCost")
     blockTime = blockTime if blockTime else NETWORK.TargetTimePerBlock
-    device = device if device else C.MODEL_DEVICE
+    device = device if device else MODEL_DEVICE
     treasurySplit = treasurySplit if treasurySplit else NETWORK.TREASURY_SPLIT
     if nethash is None:
         if roi is None: # mining ROI could be zero 

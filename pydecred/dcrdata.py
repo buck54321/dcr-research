@@ -3,6 +3,7 @@ pyDcrData
 DcrDataClient.endpointList() for available enpoints.
 Arguments can be positional or keyword, not both.
 """
+import os
 import urllib.request as urlrequest
 import traceback
 import json
@@ -407,3 +408,39 @@ class ArchiveException(Exception):
     def __init__(self, name, message):
         self.name = name
         self.message = message
+
+
+archivist = None
+
+
+def getPGArchivist(dbName=None, host=None, user=None, password=None, iniPath=None):
+    global archivist
+    if not archivist:
+        if not all([dbName, host, user, password]):
+            if not iniPath:
+                iniPath = os.path.join(helpers.appDataDir("dcrdata"), "dcrdata.conf")
+            config = helpers.parseConfig(iniPath)["Application Options"]
+            if not dbName:
+                if "pgdbname" not in config:
+                    raise Exception("getPGArchivist: No PostgreSQL database name specified.")
+                dbName = config["pgdbname"]
+            port = None
+            if not host:
+                if "pghost" not in config:
+                    raise Exception("getPGArchivist: No PostgreSQL host specified.")
+                host = config["pghost"]
+                if host[-1] != ']':
+                    parts = host.split(":")
+                    if len(parts) > 1:
+                        port = int(parts[-1])
+                        host = "".join(parts[:-1])
+            if not user:
+                if "pguser" not in config:
+                    raise Exception("getPGArchivist: No PostgreSQL user specified.")
+                user = config["pguser"]
+            if not password: 
+                if "pgpass" not in config:
+                    raise Exception("getPGArchivist: No PostgreSQL password specified.")
+                password = config["pgpass"]
+        archivist = PostgreArchivist(dbName, host, user, password, port)
+    return archivist

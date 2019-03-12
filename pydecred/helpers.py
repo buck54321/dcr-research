@@ -4,6 +4,7 @@ import sys
 import time
 import calendar
 import json
+import configparser
 from pydecred import constants as C
 # import traceback
 import urllib.request as urlrequest
@@ -59,10 +60,6 @@ def stamp2dayStamp(stamp):
 def ymdString(stamp):
     """ YY-MM-DD """
     return ".".join([str(x).zfill(2) for x in yearmonthday(stamp)])
-
-
-def clamp(val, minVal, maxVal):
-    return max(minVal, min(val, maxVal))
 
 
 def recursiveUpdate(target, source):
@@ -144,7 +141,7 @@ def formatNumber(number, billions="B", spacer=" ", isMoney = False):
         absVal = float(abs(number))
         flt = float(number)
         if absVal >= 1e12: # >= 1 trillion
-            return "%.2e"
+            return "%.2e" % flt
         if absVal >= 10e9: # > 10 billion
             return "%.1f%s%s" % (flt/1e9, spacer, billions)
         if absVal >= 1e9: # > 1 billion
@@ -215,16 +212,23 @@ class ConsoleLogger:
     critical = log
 
 
-def makeDevice(device):
+def makeDevice(model=None, price=None, hashrate=None, power=None, release=None, source=None):
     """
-    Set some commonly used parameters.
-    Modifies in-place. Device returned as convenience.
+    Create a device
     """
+    device = {
+        "model": model,
+        "price": price,
+        "hashrate": hashrate,
+        "power": power,
+        "release": release,
+        "source": source
+    }
     device["daily.power.cost"] = C.PRIME_POWER_RATE*device["power"]/1000*24
     device["min.profitability"] = -1*device["daily.power.cost"]/device["price"]
     device["power.efficiency"] = device["hashrate"]/device["power"]
     device["relative.price"] = device["price"]/device["hashrate"]
-    if "release" in device and isinstance(device["release"], str):
+    if release and isinstance(release, str):
         device["release"] = mktime(*[int(x) for x in device["release"].split("-")])
     return device
 
@@ -263,11 +267,17 @@ def getUriAsJson(uri):
     """
     GET request parsed as JSON
     """
-    req = urlrequest.Request(uri, headers=C.HEADERS, method="GET")
+    req = urlrequest.Request(uri,
+                             headers={'Content-Type': 'application/json'},
+                             method="GET"
+                             )
     return json.loads(urlrequest.urlopen(req).read().decode())
 
-def appDataDir():
-    appName = "dcrdata"
+
+def appDataDir(appName="dcrdata"):
+    """
+    Mirror of `dcrutil.AppDataDir`.
+    """
     opSys = platform.system()
     if opSys == "Windows":
         appDir = os.getenv("LOCALAPPDATA")
@@ -279,3 +289,12 @@ def appDataDir():
     if opSys == "Darwin":
         return os.path.join(appDir, "Library", "Application Support", appName.capitalize())
     return os.path.join(appDir, "."+appName)
+
+
+def parseConfig(iniPath):
+    """
+    Parse the config file at `iniPath`. Returns a `configparser.ConfigParser`.
+    """
+    config = configparser.ConfigParser()
+    config.read(iniPath)
+    return config

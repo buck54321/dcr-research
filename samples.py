@@ -2,7 +2,7 @@ from pydecred import mainnet, helpers, calc
 from pydecred import constants as C
 import pydecred.mplstuff as mpl
 from pydecred.cmcapi import CMCClient
-from pydecred.dcrdata import DcrDataClient, PostgreArchivist
+from pydecred.dcrdata import DcrDataClient, getPGArchivist
 import os
 import json
 import time
@@ -15,7 +15,6 @@ APPDIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 # NiceHash price for Decred 0.0751/PH/day
 NICEHASH_RATE = 0.0751/1e12
 helpers.mkdir(APPDIR)
-archivist = PostgreArchivist("dcrdata", "localhost", "dcrdatauser", "dcrpass8675309")
 DCRDATA_URI = "http://localhost:7777/"
 dataClient = DcrDataClient(DCRDATA_URI)
 
@@ -23,105 +22,15 @@ cmcDir = os.path.join(APPDIR, "cmc")
 helpers.mkdir(cmcDir)
 cmcClient = CMCClient(cmcDir)
 
-# A range of devices for mining Black256R14
-DeviceRanges = {
-    "asic": {
-        "high": {
-            "model": "INNOSILICON D9 Miner",
-            "price": 1699,
-            "release":  "2018-04-18",
-            "hashrate": 2.1e12,
-            "power": 900,
-        },
-        "low": {
-            "model": "Baikal Giant B",
-            "price": 399,
-            "release": "2018-01-31",
-            "hashrate": 160e9,
-            "power": 410,
-        }
-    },
-    "gpu": {
-        "low": {
-            "model": "RX 480",
-            "price": 200,
-            "release": "2016-06-01",
-            "source": "https://forum.ethereum.org/discussion/11761/31-1mh-eth-575mh-dcr-dual-on-msi-rx-480-8gb",
-            "hashrate": 575e6,
-            "power": 140,
-        },
-        "high": {
-            "model": "GeForce GTX 1080 Ti",
-            "price": 475,
-            "release": "2017-03-10",
-            "source": "https://www.easypc.io/crypto-mining/decred-hardware/",
-            "hashrate": 3.8e9,
-            "power": 216,
-        }
-    }
-}
-
-# State-of-the-art devices for a range of algorithms.
-DeviceParams = {
-    "Blake256r14": helpers.recursiveUpdate({"example": "DCR"}, C.MODEL_DEVICE),
-    "Equihash <200,9>": {
-        "model": "Bitmain Z9",
-        "hashrate": 41e3,
-        "power": 1150,
-        "price": 3300
-    },
-    # "Equihash <144, 5>": {
-    #   "model": "GeForce 1080 Ti",
-    #   "example": "BTG",
-    #   "hashrate": 56,
-    #   "power": 275,
-    #   "price": 475
-    # },
-    "Ethash": {
-        "model": "Antminer E3",
-        "example": "ETH",
-        "hashrate": 190e6,
-        "power": 760,
-        "price": 1150
-    },
-    "ProgPOW": {
-        "model": "NVIDIA GeForce 1080 Ti",
-        "example": "ZCash",
-        "hashrate": 22e6,
-        "power": 275,
-        "price": 475
-    },
-    "Cryptonight V8": {
-        "model": "NVIDIA GeForce 1080 Ti",
-        "example": "XMR",
-        "hashrate": 950,
-        "power": 180,
-        "price": 475
-    },
-    "Sha256": {
-        "model": "Antminer S15",
-        "example": "BTC",
-        "hashrate": 28e12,
-        "power": 1596,
-        "price": 1475
-    }
-}
-[helpers.makeDevice(d) for d in DeviceParams.values()]
-
-
-archivist = None
-
-
-def getPGArchivist():
-    global archivist
-    if not archivist:
-        archivist = PostgreArchivist("dcrdata", "localhost", "dcrdatauser", "dcrpass8675309")
+# A model device. Should be roughly the most efficient device on the market.
+Device = helpers.makeDevice(**C.MODEL_DEVICE)
 
 
 def getDbHeight():
     """
     Grab the best block height from a DCRData DB.
     """
+    archivist = getPGArchivist()
     return archivist.getQueryResults("SELECT height FROM blocks ORDER BY height DESC LIMIT 1")[0][0]
 
 
@@ -135,43 +44,49 @@ def getDcrDataHashrate(height=None):
     return (int(block["chainwork"], 16) - int(oldBlock["chainwork"], 16))/(block["time"] - oldBlock["time"])
 
 
-def getDcrDataProfitability(xcRate, height=None):
+def getDcrDataProfitability(xcRate, height=None, device=None):
     """
     Get current mining profitability from DCRData.
     """
-    device = C.MODEL_DEVICE
+    device = device if device else C.MODEL_DEVICE
     height = height if height else int(dataClient.block.best.height())
     nethash = getDcrDataHashrate(height)
     gross = device["hashrate"]/nethash*calc.dailyPowRewards(height)*xcRate
     power = device["power"]*24/1000*C.PRIME_POWER_RATE
-    return (device["hashrate"]/nethash*calc.dailyPowRewards(height)*xcRate - device["power"]*24/1000*C.PRIME_POWER_RATE)/device["price"]
+    return (gross - power)/device["price"]
 
 
-def getDcrDataAPY():
+def getDcrDataAPY(method="prospective", height=None):
     """
     Get current stake profitability from DCRData.
+
+    dataClient.block.best()["ticket_pool"]["valavg"] is the average price of the
+    tickets in the ticket pool
+
+    dataClient.block.best()["sdiff"] is the current ticket price
+
+    dataClient.tx(dataClient.block.best.verbose()["stx"][i])["vin"][0]["amountin"] is the price paid by winner i
+    dataClient.tx(dataClient.block.best.verbose()["stx"][i])["vin"][1]["amountin"] is the reward for winner i (should be the same for all "stx")
     """
-    block = dataClient.block.best.verbose()
-    juice = principal = 0
-    for txid in block["stx"]:
-        vin = dataClient.tx(txid)["vin"]
-        if "stakebase" in vin[0]:
-            juice += vin[0]["amountin"]
-            principal += vin[1]["amountin"]
+    if method == "this.block":
+        block = dataClient.block.best.verbose()
+        juice = principal = 0
+        for txid in block["stx"]:
+            vin = dataClient.tx(txid)["vin"]
+            if "stakebase" in vin[0]:
+                juice += vin[0]["amountin"]
+                principal += vin[1]["amountin"]
+    if method == "prospective":
+        height = height if height else dataClient.block.best.height()
+        principal = dataClient.block.best()["sdiff"]
+        juice = calc.blockReward(height + int(mainnet.TicketPoolSize/2))*mainnet.STAKE_SPLIT/mainnet.TicketsPerBlock
+    if method == "current":
+        height = height if height else dataClient.block.best.height()
+        principal = dataClient.block.best()["ticket_pool"]["valavg"]
+        juice = calc.blockReward(height)*mainnet.STAKE_SPLIT/mainnet.TicketsPerBlock
+
     power = 365/28
     return (juice/principal + 1)**power - 1
-
-
-def getDevices():
-    """
-    A generator for the devices list.
-    """
-    for dType in DeviceRanges:
-        for level in DeviceRanges[dType]:
-            dvc = DeviceRanges[dType][level]
-            dvc["level"] = level
-            dvc["type"] = dType
-            yield dvc
 
 
 def fetchCMCHistory():
@@ -215,6 +130,7 @@ def fetchCoinbase(process=True):
     For network averaging. Stores results to intermediate file for use by
     other plotting functions.
     """
+    archivist = getPGArchivist()
     dcrFactor = 1e-8
     query = "SELECT block_height, block_time, spent FROM transactions WHERE tx_type=0 AND block_index=0 AND is_mainchain=TRUE ORDER BY block_height LIMIT 10000 offset %i;"
     blocks = []
@@ -276,6 +192,7 @@ def storeDailyChainwork():
     """
     Calculate the work done every day. Saves to file.
     """
+    archivist = getPGArchivist()
     query = "SELECT height, time, chainwork FROM blocks WHERE is_mainchain=TRUE ORDER BY height"
     chainworks = []
     print("Querying chainwork")
@@ -348,10 +265,38 @@ def plotDevices(processor):
     Plots data for the DeviceRanges. The values plotted depend on the processor
     argument. See `profitProcessor` and `RetailCapitalProcessor`.
     """
+    DeviceRanges = {
+        "asic": {},
+        "gpu": {}
+    }
+
+    DeviceRanges["asic"]["low"] = helpers.makeDevice(
+        "Baikal Giant B", 399, hashrate=160e9, power=410, release="2018-01-31")
+
+    DeviceRanges["asic"]["high"] = Device
+
+    DeviceRanges["gpu"]["low"] = helpers.makeDevice(
+        "RX 480", 200, hashrate=575e6, power=140, release="2016-06-01")
+
+    DeviceRanges["gpu"]["high"] = helpers.makeDevice(
+        "GTX 1080 Ti", 475, hashrate=3.8e9, power=216, release="2017-03-10")
+
+    def getDevices():
+        """
+        A generator for the devices list.
+        """
+        for dType in DeviceRanges:
+            for level in DeviceRanges[dType]:
+                dvc = DeviceRanges[dType][level]
+                dvc["level"] = level
+                dvc["type"] = dType
+                yield dvc
+
     for dvc in getDevices():
         helpers.makeDevice(dvc)
         dvc["x"] = []
         dvc["y"] = []
+
     fig = plt.gcf()
     plt.subplots_adjust(0.25, 0.1, 0.9, 0.9, 0, 0.1)
     stats = compileDailyStats()
@@ -565,6 +510,7 @@ def calculateTicketReturns():
     """
     Historical ticket return rate.
     """
+    archivist = getPGArchivist()
     query = "SELECT height, ticket_price, vote_reward FROM votes ORDER BY height LIMIT 10000 offset %i;"
     height = archivist.getQueryResults("SELECT height FROM blocks ORDER BY height DESC LIMIT 1")[0][0]
     setSize = 10000
@@ -750,7 +696,7 @@ def plotSupplyReturn():
     for stakeShare in [0.10, 0.20, 0.3, 0.4]:
         Y = []
         for apy in X:
-            locked = calc.ReverseEquations.calcTicketPrice(apy, height, stakeSplit=stakeShare)*mainnet.TicketExpiry/1e6
+            locked = calc.ReverseEquations.ticketPrice(apy, height, stakeSplit=stakeShare)*mainnet.TicketExpiry/1e6
             Y.append(locked)
         plt.plot([x*100 for x in X], Y, linestyle=next(linestyle), color=next(color), label="%i%%" % (stakeShare*100,))
     supply = dataClient.supply()["supply_mined"]/1e8/1e6 # 1e8 converts from atoms. 1e9 to millions.
@@ -768,6 +714,28 @@ def calcAlgos():
     """
     The cost of attack for different algorithms based on model devices.
     """
+    # State-of-the-art devices for a range of algorithms.
+    DeviceParams = {}
+    DeviceParams["Blake256r14"] = Device
+
+    DeviceParams["Equihash <200,9>"] = helpers.makeDevice(
+        "Bitmain Z9", 3300, hashrate=41e3, power=1150)
+
+    DeviceParams["Ethash"] = helpers.makeDevice(
+        "Antminer E3", 3300, hashrate=41e3, power=1150)
+
+    DeviceParams["ProgPOW"] = helpers.makeDevice(
+        "GeForce 1080 Ti", 475, hashrate=22e6, power=275)
+
+    DeviceParams["Cryptonight V8"] = helpers.makeDevice(
+        "GeForce 1080 Ti", 475, hashrate=950, power=180)
+
+    DeviceParams["Cryptonight V8"] = helpers.makeDevice(
+        "GeForce 1080 Ti", 475, hashrate=950, power=180)
+
+    DeviceParams["Sha256"] = helpers.makeDevice(
+        "Antminer S15", 1475, hashrate=28e12, power=1596)
+
     fig = plt.gcf()
     ax = plt.gca()
     # ax.semilogy()
@@ -845,10 +813,9 @@ def plotTransactions(startHeight, makePlot=True, makeCsv=False, regularOnly=True
     Plot all transactions since start height. DCR vs time. Each transaction is
     one pixel.
     """
+    archivist = getPGArchivist()
     bestBlockHeight = getDbHeight()
     height = startHeight
-    # 0 = regular, 1 = ticket, 2 = vote, 3 = revocation
-    types = ['Regular', 'Ticket', 'Vote', 'Rev']
     color = iter(['#00c903', '#c600c0', '#002ccc', '#d60000'])
     txTypes = {
         0: [],
@@ -903,6 +870,32 @@ def plotTransactions(startHeight, makePlot=True, makeCsv=False, regularOnly=True
         except Exception:
             print("Failed to create CSV file at %s" % csvPath)
 
+# pool_status column
+    # PoolStatusLive TicketPoolStatus = iota
+    # PoolStatusVoted
+    # PoolStatusExpired
+    # PoolStatusMissed
+
+# spend_type column
+    # TicketUnspent TicketSpendType = iota
+    # TicketRevoked
+    # TicketVoted
+
+def plotExpirations():
+    archivist = getPGArchivist()
+    query = "SELECT tickets.spend_type, tickets.tx_hash, blocks.time FROM tickets JOIN blocks ON tickets.block_hash = blocks.hash WHERE tickets.pool_status = 2 ORDER BY tickets.block_height;"
+    rows = archivist.getQueryResults(query)
+    X = []
+    Y = []
+    fig = plt.gcf()
+    ax = plt.gca()
+    plt.subplots_adjust(0.2, 0.2, 0.8, 0.8, 0, 0.1)
+
+    
+
+plotExpirations()
+
+
 # fetchCoinbase()
 # storeDailyChainwork()
 
@@ -930,6 +923,7 @@ def plotTransactions(startHeight, makePlot=True, makeCsv=False, regularOnly=True
 #   rentalRate = NICEHASH_RATE,
 #   divisor = 1e6
 # )
+
 
 plotContour(
   calc.attackCost,

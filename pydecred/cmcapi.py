@@ -24,7 +24,7 @@ class CMCClient:
         if "price.cache" not in self.settings:
             self.settings["price.cache"] = []
         self.cache = self.settings["price.cache"]
-        
+
     def settingsPath(self):
         return os.path.join(self.dataDir, self.settingsFilename)
 
@@ -39,8 +39,8 @@ class CMCClient:
 
     def fetchPrice(self, token):
         """
-        Fetch the price from the API. The API has strict limits on 
-        requests, so a cache is implemented to prevent spamming the 
+        Fetch the price from the API. The API has strict limits on
+        requests, so a cache is implemented to prevent spamming the
         server.
         """
         i = 0
