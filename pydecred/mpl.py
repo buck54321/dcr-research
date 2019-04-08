@@ -2,7 +2,7 @@ from pydecred import helpers
 from pydecred import constants as C
 import matplotlib
 from matplotlib.figure import Figure
-# from matplotlib.patches import Circle, Wedge, Polygon, Ellipse, Rectangle
+from matplotlib.patches import Circle, Wedge, Polygon, Ellipse, Rectangle
 # from matplotlib.ticker import AutoMinorLocator
 from matplotlib import font_manager as FontManager
 from mpl_toolkits.mplot3d import Axes3D # leave this even if the linter complains
@@ -35,6 +35,13 @@ def setDefaultAxesColor(color):
 
 
 setDefaultAxesColor(MPL_COLOR)
+
+def setFrameColor(ax, color):
+    """
+    Sets the color of the plot frame
+    """
+    for spine in ax.spines.values():
+        spine.set_color(color)
 
 
 def getFont(font, size):
@@ -113,11 +120,6 @@ class TexWidget(FigureCanvas):
         ax.set_xlim(left=0, right=1)
         ax.set_ylim(top=1, bottom=0)
         text = ax.text(0.5, 0.5, equation, fontsize=fontSize, horizontalalignment="center", verticalalignment="center")
-        # self.fig.canvas.draw()
-        # transf = ax.transData.inverted()
-        # bb = text.get_window_extent(renderer=self.fig.canvas.renderer)
-        # print(equation)
-        # print(repr(bb.transformed(transf).get_points()))
         self.updateText = lambda s: text.set_text(s)
         self.defaultColor = "white"
 

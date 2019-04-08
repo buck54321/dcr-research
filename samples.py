@@ -1,15 +1,18 @@
 from pydecred import mainnet, helpers, calc
 from pydecred import constants as C
-import pydecred.mplstuff as mpl
+from pydecred import mpl
 from pydecred.cmcapi import CMCClient
 from pydecred.dcrdata import DcrDataClient, getPGArchivist
 import os
 import json
 import time
+import calendar
 
 import matplotlib.pyplot as plt
 import numpy as np
 import csv
+
+import imageio
 
 APPDIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 # NiceHash price for Decred 0.0751/PH/day
@@ -891,10 +894,349 @@ def plotExpirations():
     ax = plt.gca()
     plt.subplots_adjust(0.2, 0.2, 0.8, 0.8, 0, 0.1)
 
+
+def calcSplitTransactionSize():
+    archivist = getPGArchivist()
+    # tx type
+    # TxTypeRegular TxType = iota
+    # TxTypeSStx <- ticket
+    # TxTypeSSGen <- vote
+    # TxTypeSSRtx
+    response = dataClient.chart("ticket-price")
+    windowStarts = [calendar.timegm(time.strptime(t, "%Y-%m-%dT%H:%M:%SZ")) for t in response["time"]]
+    windowStarts.reverse()
+    prices = response["valuef"]
+    prices.reverse()
+    h = dataClient.block.best.height()
+    blocks = []
+    # select regular transactions, grouped by block_height and tx_hash
+    # 1. grab regular transaction hashes for a block
+    # 2. grab vouts
+    # 3. check if any vouts are the same as the ticket price
+    # 3a. optionally apply a range of accepted values around the ticket price
+    # 4. If so, store the sum and get the size
+    def ticketPrice(stamp):
+        while stamp < windowStarts[0]:
+            windowStarts.pop(0)
+            prices.pop(0)
+            if len(windowStarts) == 0:
+                exit('somethings wrong')
+        return prices[0]*1e8
+    txQuery = "SELECT tx_hash, block_time, size FROM transactions WHERE block_height = %i AND tx_type=0"
+    voutQuery = "SELECT value FROM vouts WHERE tx_hash='%s'"
+    length = 1000
+    start = h
+    end = h - length
+    splitTxSize = 0
+    while h > end:
+        if h % 100 == 0:
+            print("checking block %i" % h)
+        transactions = archivist.getQueryResults(txQuery % h)
+        if len(transactions) == 0:
+            continue
+        price = ticketPrice(transactions[0][1].timestamp())
+        for txHash, blockTime, size in transactions:
+            vouts = archivist.getQueryResults(voutQuery % txHash)
+            for val, in vouts:
+                if abs((val-price)/price) < 0.01:
+                    # check if outputs go directly into a ticket
+                    
+                    splitTxSize += size
+                    break
+        h -= 1
+    blocks = archivist.getQueryResults("SELECT size FROM blocks WHERE height > %i" % h)
+    blockSum = sum([b[0] for b in blocks])
+    print("%i blocks" % (start-h,))
+    print("%iMB / %iMB = %.1f%%" % (splitTxSize/1e6, blockSum/1e6, splitTxSize/blockSum*100))
+
+# calcSplitTransactionSize()
+
+class animationBlock:
+    def __init__(self, t, value, size):
+        self.t = t
+        self.value = value
+        self.size = size
+        self.step = 0
+        self.ptSize = 0
+        self.displaySize = 0
+        self.fadingOut = False
     
+def plotBlocks(blockCount=30):
+    mpl.setDefaultAxesColor("#777777")
+    archivist = getPGArchivist()
+    dbBlocks = archivist.getQueryResults("SELECT hash, time, size FROM blocks ORDER BY height DESC LIMIT %i" % blockCount)
+    query = "SELECT sent FROM transactions WHERE block_hash='%s'"
+    blocks = []
+    for blockHash, dt, size in reversed(dbBlocks):
+        txs = archivist.getQueryResults(query % blockHash)
+        totalSent = 0
+        for sent, in txs:
+            totalSent += sent
+        dcr = totalSent/1e8
+        blocks.append(animationBlock(helpers.dt2stamp(dt), dcr, size))
 
-plotExpirations()
+    # Set up the animation parameters
+    minPtSize = 35
+    maxPtSize = 3000
+    ptRange = maxPtSize - minPtSize
+    windowWidth = 3 * C.HOUR
+    tStart = blocks[0].t
+    tEnd = blocks[-1].t
+    tRange = tEnd - tStart
+    animationComplete = tEnd - windowWidth
+    animationStep = 60 # seconds per frame
+    fadeFrames = 7 # frames
+    fadeLength = fadeFrames * animationStep
 
+    # Prepare the chart. Size must be set explicitly
+    fig = plt.gcf()
+    fig.set_dpi(160)
+    fig.set_size_inches(8, 4.5)
+    ax = plt.gca()
+    mpl.setFrameColor(ax, "white")
+    plt.subplots_adjust(0.1, 0.1, 0.9, 0.9, 0, 0)
+    writer = imageio.get_writer(os.path.join(APPDIR, "blocks.mp4"), mode='I', fps=30.)
+    plot = ax.scatter([0, 1], [0, 1], c="#666666", s=[1, 1], marker="o", linewidths=1, edgecolors='white', zorder=10)
+
+    # Place the axis labels
+    fig.text(0.45, 0.90, "Decred Blocks", fontdict={
+        "fontproperties": mpl.getFont("Roboto-Medium", 15),
+        "horizontalalignment": "center",
+        "verticalalignment": "bottom"
+    }, zorder=100)
+    fig.text(0.075, 0.5, "DCR", fontdict={
+        "fontproperties": mpl.getFont("Roboto-Medium", 13),
+        "rotation": 90
+    })
+    leftSizeLabel = fig.text(0.7, 0.90, "0.5kb", fontdict={
+        "fontproperties": mpl.getFont("Roboto-Regular", 10),
+        "horizontalalignment": "right",
+        "verticalalignment": "bottom"
+    }, zorder=20)
+    rightSizeLabel = fig.text(0.78, 0.90, "50kb", fontdict={
+        "fontproperties": mpl.getFont("Roboto-Regular", 10),
+        "horizontalalignment": "left",
+        "verticalalignment": "bottom"
+    }, zorder=20)
+    fig.patches.extend([mpl.Wedge(
+        (0.71, 0.91), 0.065, 0, 15,
+        color="#666666",
+        fill=True,
+        transform=fig.transFigure, 
+        figure=fig
+    )])
+
+
+    # set the initial stage
+    initialSet = [b for b in blocks if b.t <= tStart + windowWidth]
+    minVal = min((b.value for b in initialSet))
+    maxVal = max((b.value for b in initialSet))
+    totalMinVal = min((b.value for b in blocks))
+    totalMaxVal = max((b.value for b in blocks))
+    minSize = min((b.size for b in initialSet))
+    maxSize = max((b.size for b in initialSet))
+    sizeRange = maxSize - minSize
+    totalMinSize = min((b.size for b in blocks))
+    totalMaxSize = max((b.size for b in blocks))
+    totalRange = totalMaxSize - totalMinSize
+
+    ax.set_xlim(left=tStart-fadeLength, right=tStart+windowWidth+fadeLength)
+    ax.set_ylim(bottom=totalMinVal, top=totalMaxVal)
+    fig.canvas.draw()
+    spotRadius = np.sqrt(maxPtSize)
+    transform = ax.transData.inverted().transform
+    displacement = transform([0., spotRadius]) - transform([0., 0.])
+    yPad = displacement[1] * 2 # get a constant amount of padding to add to the chart in y
+    xPad = 10 * C.MINUTE
+
+    scaledPadding = sizeRange / float(totalRange) * yPad
+    ylims = helpers.Generic_class(top=maxVal+scaledPadding, bottom=minVal-scaledPadding)
+    ylimGoal = helpers.Generic_class(top=maxVal+scaledPadding, bottom=minVal-scaledPadding)
+    ylimStep = fadeFrames
+
+    def convertSize(size):
+        return (size - minSize) / sizeRange * ptRange + minPtSize
+
+    for b in initialSet:
+        b.displaySize = convertSize(b.size)
+
+    def isclose(a, b):
+        return np.isclose([a], [b])
+
+    tfmt = lambda t: time.strftime("%m/%d/%y %H:%M", time.localtime(t))
+    vfmt = lambda s: helpers.formatNumber(s, spacer="")
+    sfmt = lambda s: "%sB" % helpers.formatNumber(s, billions="G")
+
+    def writeFrame(start):
+        nonlocal minVal, maxVal, minSize, maxSize, sizeRange, ylimStep
+        cutoff = start - fadeLength
+        end = start + windowWidth
+        frameBlocks = [b for b in blocks if b.t >= cutoff and b.t <= end]
+        X = [b.t for b in frameBlocks]
+        Y = [b.value for b in frameBlocks]
+        S = [b.size for b in frameBlocks]
+
+        minVal = min(Y)
+        maxVal = max(Y)
+        minSize = min(S)
+        maxSize = max(S)
+        sizeRange = maxSize - minSize
+        for b in frameBlocks:
+            ptSize = convertSize(b.size)
+            if not b.fadingOut and not isclose(ptSize, b.ptSize):
+                b.ptSize = ptSize
+                b.step = 0
+            if b.t < start and not b.fadingOut:
+                b.ptSize = 0
+                b.fadingOut = True
+                b.step = 0
+            if b.step == fadeFrames:
+                b.displaySize = b.ptSize
+            else:
+                stepProportion = 1. / (fadeFrames - b.step)
+                b.displaySize += stepProportion*(b.ptSize - b.displaySize)
+                b.step += 1
+
+        scaledPadding = sizeRange / float(totalRange) * yPad
+        if not isclose(minVal-scaledPadding, ylimGoal.bottom) or not isclose(maxVal+scaledPadding, ylimGoal.top):
+            ylimGoal.top = maxVal + scaledPadding
+            ylimGoal.bottom = minVal - scaledPadding
+            ylimStep = 0
+        if ylimStep < fadeFrames:
+            stepProportion = 1. / (fadeFrames - ylimStep)
+            ylims.top += stepProportion*(ylimGoal.top - ylims.top)
+            ylims.bottom += stepProportion*(ylimGoal.bottom - ylims.bottom)
+            ylimStep += 1
+
+        xMin = cutoff - xPad
+        xMax = end+fadeLength+xPad
+        ax.set_xlim(left=xMin, right=xMax)
+        ax.set_xticks([start, end])
+        ax.set_xticklabels([tfmt(start), tfmt(end)])
+        ax.set_ylim(bottom=ylims.bottom, top=ylims.top)
+        ax.set_yticks([minVal, maxVal])
+        ax.set_yticklabels([vfmt(minVal), vfmt(maxVal)])
+        leftSizeLabel.set_text(sfmt(minSize))
+        rightSizeLabel.set_text(sfmt(maxSize))
+        del ax.lines[:]
+        ax.plot([xMin, xMax], [minVal, minVal], color="#cccccc", linewidth=0.5)
+        ax.plot([xMin, xMax], [maxVal, maxVal], color="#cccccc", linewidth=0.5)
+        ax.plot([start, start], [ylims.bottom, ylims.top], color="#cccccc", linewidth=0.5)
+        ax.plot([end, end], [ylims.bottom, ylims.top], color="#cccccc", linewidth=0.5)
+        xy = np.array([X,Y])
+        plot.set_offsets(np.array(list(zip(X,Y))))
+        plot.set_sizes([b.displaySize for b in frameBlocks])
+        fig.canvas.draw()
+        ncols, nrows = fig.canvas.get_width_height()
+        data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='').reshape(nrows, ncols, 3)
+        writer.append_data(data)
+    tIterator = tStart
+    frame = 0
+    totalFrames = tRange / float(animationStep)
+    while tIterator <= animationComplete:
+        frame += 1
+
+        # if frame == 300:
+        #     break
+
+        if frame % 100 == 0:
+            print("frame %i: %.1f%% complete" % (frame, frame/totalFrames*100))
+        writeFrame(tIterator)
+        tIterator += animationStep
+
+    writer.close()
+
+    # sizeRange = maxSize - minSize
+    # def convertSize(size):
+    #     return (size - minSize) / sizeRange * ptRange + minPtSize
+
+
+
+    # Z = [convertSize(z) for z in Z]
+
+    # # ax.semilogy()
+    # ax.set_xticks([tStart, tEnd])
+    # ax.set_xticklabels([
+    #     time.strftime("%H:%M", time.localtime(tStart)),
+    #     time.strftime("%H:%M", time.localtime(tEnd))
+    # ])
+
+
+
+
+
+
+
+    # ax.set_xlim(left=tStart-tRange*0.05, right=tEnd+tRange*0.05)
+    # plt.xlabel("%.1f hours" % (tRange/3600, ))
+    # ax.set_yticks([minVal, maxVal])
+    # ax.set_yticklabels([helpers.formatNumber(minVal), helpers.formatNumber(maxVal)])
+
+    # print("minSize %.1f" % (minSize/1e3,))
+    # print("maxSize %.1f" % (maxSize/1e3,))
+
+    # ax.scatter(X, Y, c="#666666", s=Z, marker="o", linewidths=1, edgecolors='white')
+
+    # plt.show()
+
+# plotBlocks(300)
+
+def plotHashrate():
+    mpl.setDefaultAxesColor("#777777")
+    chainworks = dataClient.chart("chainwork")
+    times = chainworks["time"]
+    chainwork = chainworks["chainwork"]
+    midnight = helpers.stamp2dayStamp(dataClient.RFC3339toUnix(times[-1]))
+    endstamp = dataClient.RFC3339toUnix(times[-1])
+    lastTime = endstamp
+    endwork = chainwork[-1]
+    startWork = endwork
+    numPts = len(times)
+    X = []
+    Y = []
+    adjustment = 1e3 # results in petahash/s units
+    for i, t in enumerate(reversed(times)):
+        work = chainwork[numPts - i - 1]
+        stamp = dataClient.RFC3339toUnix(t)
+        if stamp < midnight:
+            dayWork = endwork - work
+            duration = endstamp - lastTime
+            X.append(midnight)
+            Y.append(dayWork*adjustment/duration)
+            if len(X) > 30:
+                break
+            midnight = helpers.stamp2dayStamp(stamp)
+        startWork = work
+        lastTime = stamp
+    X = list(reversed(X))
+    Y = list(reversed(Y))
+    fig = plt.gcf()
+    ax = plt.gca()
+    mpl.setFrameColor(ax, "#777777")
+    ax.set_yticks([min(Y), max(Y)])
+    ax.set_yticklabels([helpers.formatNumber(min(Y), spacer=""), helpers.formatNumber(max(Y), spacer="")])
+    ax.set_xticks([X[0], X[-1]])
+    plt.xlabel("day")
+    plt.ylabel("petahash/s")
+    ax.set_xticklabels([time.strftime("%b %d", time.gmtime(X[0])), time.strftime("%b %d", time.gmtime(X[-1]))])
+    plt.subplots_adjust(0.25, 0.2, 0.9, 0.9, 0, 0.1)
+    ax.plot(X, Y, color=mpl.MPL_COLOR, linewidth=2)
+    plt.show()
+
+
+archivist = getPGArchivist()
+blocks = archivist.getQueryResults("SELECT height, time FROM blocks WHERE is_mainchain ORDER BY time")
+h = 0
+t=0
+for height, dt in blocks:
+    stamp = helpers.dt2stamp(dt)
+    if height < h:
+        print("out of sequence at height %i and %i", (height, h), (dt, dt))
+    h = height
+    t = stamp
+
+
+# plotHashrate()
 
 # fetchCoinbase()
 # storeDailyChainwork()
@@ -925,19 +1267,21 @@ plotExpirations()
 # )
 
 
-plotContour(
-  calc.attackCost,
-  ("stakeSplit", np.linspace(1e-9, 0.9, 250)),
-  ("ticketFraction", np.linspace(1e-9, 1, 250)),
-  fmt=lambda v: "%i M" % int(v),
-  lvlCount=20,
-  contourType="contourf",
-  divisor=1e6,
-  # rentalRate=NICEHASH_RATE,
-  # rentalRatio = 0.2,
-  **getCurrentParameters()
-)
+# plotContour(
+#   calc.attackCost,
+#   ("stakeSplit", np.linspace(1e-9, 0.9, 250)),
+#   ("ticketFraction", np.linspace(1e-9, 1, 250)),
+#   fmt=lambda v: "%i M" % int(v),
+#   lvlCount=20,
+#   contourType="contourf",
+#   divisor=1e6,
+#   # rentalRate=NICEHASH_RATE,
+#   # rentalRatio = 0.2,
+#   **getCurrentParameters()
+# )
 
 # plotBlockCreationTime()
 
-# plotTransactions(307000, makePlot=True, makeCsv=True, regularOnly=True)
+# plotTransactions(320000, makePlot=True, makeCsv=True, regularOnly=True)
+
+# plotExpirations()

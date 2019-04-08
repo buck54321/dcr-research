@@ -144,6 +144,9 @@ class DcrDataClient:
     @staticmethod
     def timeStringToUnix(fmtStr):
         return calendar.timegm(time.strptime(fmtStr, DcrDataClient.timeFmt))
+    @staticmethod
+    def RFC3339toUnix(fmtStr):
+        return calendar.timegm(time.strptime(fmtStr, "%Y-%m-%dT%H:%M:%SZ"))
 
 
 class DcrDataException(Exception):
